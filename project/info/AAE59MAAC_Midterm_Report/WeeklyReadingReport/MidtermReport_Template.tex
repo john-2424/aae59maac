@@ -1,0 +1,167 @@
+%%%%% Conference Version%%%%%%
+%\documentclass[letterpaper, 11 pt, conference]{ieeeconf}
+
+%%%% Brief Journal Paper version%%%%%
+\documentclass[letterpaper, 11 pt, journal, twoside]{IEEEtran}
+
+\usepackage{mathrsfs}
+\usepackage{amssymb}
+\usepackage{amsmath}
+\usepackage{epsfig}
+\usepackage{color}
+\usepackage{cite}
+
+%%%% Selective part from steve.lib
+\newcommand{\rank}{{\rm rank\;}}
+\newcommand{\image}{{\rm Im\;}}
+\newcommand{\stack}{{\rm stack\;}}
+\newcommand{\Span}{{\rm span\;}}
+\newcommand{\diag}{{\rm diag\;}}
+\newcommand{\col}{{\rm col\;}}
+\newcommand{\cp}{{\rm cp\;}}
+\newcommand{\R}{\mathbb{R}}
+\newtheorem{theorem}{Theorem}
+\newtheorem{problem}{Problem}
+\newtheorem{lemma}{Lemma}
+\newtheorem{remark}{Remark}
+\newtheorem{proposition}{Proposition}
+\newtheorem{corollary}{Corollary}
+\newtheorem{property}{Property}
+\newtheorem{conjecture}{Conjecture}
+\newtheorem{assumption}{Assumption}
+\newtheorem{exercise}{Exercise}
+\newtheorem{example}{Example}
+\def\n{{\bf n}}
+\def\m{{\bf m}}
+\def\r{{\bf r}}
+\def\c{{\bf c}}
+\def\scr#1{{\mathcal #1}}
+\def\rep#1{(\ref{#1})}
+\def\eq#1{\begin{equation}#1\end{equation}}
+\def\qed{ \rule{.1in}{.1in}}
+
+%%%%% Redefined the \matt to avoid conflicts with the amsmatch package
+\def\matt#1{\begin{bmatrix}#1\end{bmatrix}}
+
+\title{Midterm Report: Reinforcement Learning for Spectral Gap Optimization in Multi-Agent Networks}
+
+\author{Shrikrishna Rajule\\
+Purdue University, West Lafayette}
+
+\begin{document}
+
+\maketitle
+
+\section{INTRODUCTION AND MOTIVATION}
+Distributed consensus is a foundational primitive in multi-agent systems, sensor fusion, swarm coordination, decentralized estimation, and distributed optimization. In a standard consensus process, agents iteratively exchange information with local neighbors and asymptotically agree on a shared quantity. The speed of this agreement depends strongly on the communication graph. For undirected graphs, the second-smallest eigenvalue of the graph Laplacian, denoted $\lambda_2(L)$, is the algebraic connectivity or spectral gap, and it plays a central role in characterizing connectivity and convergence speed \cite{Fiedler1973,OlfatiSaber2007,RenBeard2005}. A larger spectral gap generally implies faster information mixing and faster decay of disagreement.
+
+This project studies whether reinforcement learning (RL) can improve consensus performance by optimizing the communication topology or edge weights of a multi-agent network. The proposed setting is motivated by the fact that network design is rarely unconstrained in practice. Real systems face limited communication budgets, bounded link weights, degree limits, intermittent connectivity, and sometimes geometric constraints due to agent motion or sensing range. Under these constraints, directly maximizing $\lambda_2(L)$ is nontrivial. Some related optimization problems admit elegant convex formulations in restricted settings, such as fastest-mixing Markov chain design over a fixed graph \cite{Boyd2004}. However, once one introduces discrete rewiring decisions, graph-validity constraints, robustness requirements, or online adaptation to changing network conditions, the design problem becomes combinatorial and significantly harder.
+
+The research gap addressed here is therefore twofold. First, there is a gap between classical spectral graph theory---which gives strong analytical insight into why connectivity matters---and adaptive decision-making methods that can optimize graph structure under realistic constraints. Second, there is a gap between consensus theory and learning-based control: many results explain how a given graph affects convergence, but far fewer methods learn how to modify the graph online in order to systematically improve convergence-performance trade-offs. This motivates an RL-based framework in which an agent observes graph features and consensus-performance statistics, then learns constrained edge reweighting or rewiring policies that increase $\lambda_2(L)$ while accounting for communication cost and graph feasibility.
+
+The broader motivation is that such a framework may provide a bridge between network science, control, and machine learning. If successful, it would offer a reusable approach for improving convergence in multi-agent networks without manually hand-crafting topology heuristics for every graph family. In addition, the project naturally supports robotics-flavored extensions in which agents move in space and communication edges depend on proximity, so that motion and connectivity co-design become part of the same decision problem.
+
+\section{PROBLEM FORMULATION}
+Consider a network of $n$ agents represented by an undirected graph
+\begin{equation}
+G_k = (V, E_k, W_k), \qquad |V| = n,
+\end{equation}
+where $E_k$ is the edge set at time step $k$ and $W_k \in \R^{n \times n}$ is a symmetric nonnegative weight matrix. Let $D_k = \diag(W_k \mathbf{1})$ be the degree matrix and let the graph Laplacian be
+\begin{equation}
+L_k = D_k - W_k.
+\end{equation}
+Each agent $i$ holds a scalar state $x_i(k)$, and the network state is $x(k) \in \R^n$. The discrete-time consensus dynamics are modeled as
+\begin{equation}
+x(k+1) = x(k) - \alpha L_k x(k),
+\label{eq:consensus}
+\end{equation}
+where $\alpha > 0$ is a step size chosen so that the update remains stable.
+
+The average value
+\begin{equation}
+\bar{x}(k) = \frac{1}{n}\mathbf{1}^\top x(k)
+\end{equation}
+is invariant under standard consensus updates on balanced undirected graphs, and the disagreement vector is
+\begin{equation}
+e(k) = x(k) - \bar{x}(k)\mathbf{1}.
+\end{equation}
+The project evaluates convergence using disagreement energy, for example
+\begin{equation}
+J_{\text{dis}}(k) = \|e(k)\|_2^2,
+\end{equation}
+as well as convergence time, rate estimates, and communication cost.
+
+The main design variable is the communication structure. In the primary setting, the edge set is fixed and the RL agent adjusts edge weights:
+\begin{equation}
+W_k \mapsto W_{k+1}, \qquad w_{ij}(k) \in [0, w_{\max}],
+\end{equation}
+subject to constraints such as
+\begin{equation}
+\sum_{(i,j)\in E} w_{ij}(k) \le B,
+\end{equation}
+where $B$ is a communication or resource budget. In an extended setting, the RL agent can also perform discrete rewiring operations by adding or removing edges under edge-budget and degree constraints.
+
+The spectral quantity of interest is the algebraic connectivity
+\begin{equation}
+\lambda_2(L_k),
+\end{equation}
+which is the second-smallest eigenvalue of the Laplacian. For connected undirected graphs, $\lambda_2(L_k) > 0$, and larger values are associated with stronger connectivity and faster consensus mixing \cite{Fiedler1973,OlfatiSaber2007}. The optimization goal is to improve consensus by selecting valid graph modifications that maximize spectral gap while penalizing resource usage and invalid graph structures. A representative stage reward is
+\begin{equation}
+r_k = \lambda_2(L_k) - \beta\, \mathrm{Cost}(G_k) - \gamma\, \mathrm{Violations}(G_k),
+\label{eq:reward}
+\end{equation}
+where $\beta,\gamma > 0$ are weighting coefficients.
+
+This leads to the following control-learning problem.
+
+\begin{problem}
+Given an initial graph $G_0$, an initial consensus state $x(0)$, and graph constraints including bounded edge weights, communication budget, and optional degree or connectivity constraints, design a policy $\pi$ that maps graph- and performance-related observations to graph-modification actions so as to maximize cumulative reward
+\begin{equation}
+\max_{\pi} \; \mathbb{E}_{\pi}\Bigg[\sum_{k=0}^{T-1} \rho^k r_k\Bigg],
+\end{equation}
+where $r_k$ is defined in \rep{eq:reward}, while simultaneously improving consensus convergence metrics induced by \rep{eq:consensus}.
+\end{problem}
+
+The state of the RL environment will include graph descriptors and performance summaries, such as degree statistics, edge-budget utilization, Laplacian spectral summaries, and recent disagreement energy. The action space will depend on the phase of the project: continuous actions for edge reweighting in the primary deliverable, and discrete edge operations for rewiring in the extension. Baselines will include uniform weighting, Metropolis-type weights, and simple heuristic allocations based on local graph statistics.
+
+\section{YOUR PLAN/IDEA TO SOLVE THE PROPOSED PROBLEM}
+The project will be implemented in Python using NumPy/SciPy for graph generation, Laplacian construction, eigendecomposition, and consensus simulation, with optional Matplotlib visualization. The overall plan is staged so that each milestone produces a usable artifact rather than postponing validation until the end.
+
+The first step is to build a reliable baseline pipeline. This includes generating standard graph families such as ring, grid, Erd\H{o}s--R\'enyi, random geometric, and small-world graphs; computing $\lambda_2(L)$; simulating discrete-time consensus; and measuring disagreement decay and convergence time. This stage establishes the empirical relationship among topology, spectral gap, convergence speed, and communication cost. The goal is to make these relationships visible before introducing learning, so that later RL gains can be interpreted against well-understood baselines rather than against a fog machine of wishful thinking.
+
+The second step is the main technical contribution: an RL environment for constrained edge reweighting. The proposed initial policy-learning approach is Proximal Policy Optimization (PPO), because it is practical to train, widely used, and suitable for continuous control. The RL state will summarize the current graph and consensus status. Candidate features include node-degree statistics, total weight budget used, selected entries of the Laplacian spectrum, and disagreement-energy trends. The action outputs will parameterize admissible edge weights, followed by projection or clipping to satisfy bounds and total-budget constraints. The reward will combine algebraic connectivity improvement with penalties for communication cost and invalid actions as in \rep{eq:reward}. Success will be measured not only by increased $\lambda_2(L)$ but also by faster consensus in simulation and by comparison against non-learning baselines.
+
+The third step is to evaluate generalization and robustness. After training on representative graph instances, the learned policy will be tested on unseen graphs and under perturbations such as edge failures, node dropouts, packet loss, or time-varying connectivity. This matters because a policy that performs well only on one frozen graph family is academically cute but operationally fragile. The report will therefore study whether the learned strategy captures useful structural principles or merely memorizes a narrow training distribution.
+
+If time permits, the project will be extended in one of two directions. The first extension is discrete topology control, where the RL agent adds or removes edges subject to edge-budget and degree constraints. This makes the problem more combinatorial and more realistic, but also harder due to non-smooth action effects and graph-feasibility issues. The second extension is a geometry-based swarm setting in which agents occupy positions in the plane and communication depends on distance. In that case, the RL agent may move agents, within bounded velocities, to improve connectivity. This would connect the project more directly to robotics by turning spectral optimization into a ``move-to-improve-connectivity'' problem.
+
+The expected challenges are: (i) designing graph features rich enough for learning but compact enough for stable training; (ii) ensuring actions satisfy graph constraints without destroying the reward signal; (iii) balancing multi-objective trade-offs among spectral gap, cost, and robustness; and (iv) making evaluation reproducible across graph families. The proposed solution strategy is to start with the simplest reliable setting---fixed graph support with continuous edge reweighting---and then layer in complexity only after the baseline and RL pipeline are quantitatively validated. This reduces implementation risk while still guaranteeing a meaningful final deliverable.
+
+In summary, the core idea is to use RL not as a magical replacement for graph theory, but as an adaptive optimizer that operates on top of graph-theoretic structure. Spectral gap provides the guiding objective, consensus dynamics provide the downstream task, and RL provides a mechanism for constrained, data-driven topology improvement. The primary guaranteed outcome is a working RL framework for spectral-gap maximization via edge reweighting, together with quantitative evidence of improved $\lambda_2(L)$ and faster consensus convergence. Discrete rewiring and geometry-aware motion control are structured as extensions rather than dependencies.
+
+\begin{thebibliography}{99}
+
+\bibitem{Fiedler1973}
+M. Fiedler, ``Algebraic connectivity of graphs,'' \emph{Czechoslovak Mathematical Journal}, vol. 23, no. 2, pp. 298--305, 1973.
+
+\bibitem{RenBeard2005}
+W. Ren, R. W. Beard, and E. M. Atkins, ``A survey of consensus problems in multi-agent coordination,'' in \emph{Proc. American Control Conference}, 2005, pp. 1859--1864.
+
+\bibitem{OlfatiSaber2007}
+R. Olfati-Saber, J. A. Fax, and R. M. Murray, ``Consensus and cooperation in networked multi-agent systems,'' \emph{Proceedings of the IEEE}, vol. 95, no. 1, pp. 215--233, 2007.
+
+\bibitem{Boyd2004}
+S. Boyd, P. Diaconis, and L. Xiao, ``Fastest mixing Markov chain on a graph,'' \emph{SIAM Review}, vol. 46, no. 4, pp. 667--689, 2004.
+
+\bibitem{Olshevsky2009}
+A. Olshevsky and J. N. Tsitsiklis, ``Convergence speed in distributed consensus and averaging,'' \emph{SIAM Review}, vol. 53, no. 4, pp. 747--772, 2011.
+
+\bibitem{Han2016}
+Z. Han, L. Wang, G. Shi, and H. Qin, ``Distributed coordination in multi-agent systems: A graph Laplacian perspective,'' \emph{Frontiers of Information Technology \& Electronic Engineering}, vol. 17, no. 8, pp. 825--843, 2016.
+
+\bibitem{Darvariu2024}
+V.-A. Darvariu, S. Hailes, M. Musolesi, G. De Francisci Morales, B. Ommer, M. Wooldridge, and S. Devlin, ``Graph reinforcement learning for combinatorial optimization: A survey and unifying perspective,'' \emph{Transactions on Machine Learning Research}, 2024.
+
+\end{thebibliography}
+
+\end{document}

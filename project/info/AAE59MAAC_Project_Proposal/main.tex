@@ -1,0 +1,97 @@
+% ---------------------------------------------------------
+% AAE 59000 / CS558-Style Project Proposal
+% Reinforcement Learning for Spectral Gap Optimization
+% ---------------------------------------------------------
+
+\documentclass[11pt, letterpaper]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath}
+\usepackage{enumitem}
+\usepackage{parskip}
+\usepackage{helvet}
+\renewcommand{\familydefault}{\sfdefault}
+
+\begin{document}
+
+\begin{center}
+{\LARGE \textbf{Reinforcement Learning for Spectral Gap Optimization in Multi-Agent Networks}} \\[6pt]
+\end{center}
+
+\vspace{0.3cm}
+
+\textbf{Team Members:} \\
+Shrikrishna Rajule (039291041) \\
+
+\vspace{0.4cm}
+
+\textbf{Robot Platform and Simulator:} \\
+
+This project will use a \textbf{multi-agent network simulator} implemented in \textbf{Python} (NumPy/SciPy) with optional visualization (Matplotlib). Agents will be modeled as nodes in a graph with local communication. The primary ``plant'' is the \textbf{consensus dynamics} running over a graph Laplacian, and the primary design variable is the \textbf{communication topology (or edge weights)}. 
+
+We will optionally include a lightweight \textbf{2D point-mass swarm} variant where communication edges depend on inter-agent distance, enabling a robotics-flavored ``move-to-improve-connectivity'' extension if time permits.
+
+\vspace{0.4cm}
+
+\textbf{Project Overview:} \\
+
+Distributed consensus and averaging algorithms over graphs converge at rates strongly influenced by graph connectivity. In particular, the \textbf{spectral gap}---the second smallest eigenvalue of the graph Laplacian, $\lambda_2(L)$---is a key indicator of algebraic connectivity and is closely tied to mixing and convergence speed in many consensus models.
+
+This project investigates whether \textbf{reinforcement learning (RL)} can \textbf{optimize the spectral gap} under realistic constraints (limited communication budget, bounded edge weights, degree constraints, or distance-limited communication) and thereby accelerate consensus performance.
+
+The proposed framework consists of:
+
+\begin{itemize}[leftmargin=1.2em]
+    \item \textbf{Graph + Dynamics:} Discrete-time consensus over a graph $G=(V,E)$ using Laplacian-based updates.
+    \item \textbf{RL Topology Optimizer:} An RL agent that takes actions to modify the communication structure (edge weights and/or edges) to maximize $\lambda_2(L)$ while respecting constraints.
+    \item \textbf{Evaluation:} Quantitative comparison of consensus convergence speed, robustness, and communication cost versus standard baselines.
+\end{itemize}
+
+A representative consensus update (for node states $x \in \mathbb{R}^n$) is:
+\[
+x(k+1) = x(k) - \alpha L(k)\,x(k),
+\]
+where $\alpha>0$ is a step size and $L(k)$ is the (possibly time-varying) Laplacian induced by the RL-modified graph.
+
+The RL objective will be based on spectral gap and constraints, e.g.:
+\[
+r_k = \lambda_2(L(k)) - \beta \cdot \text{Cost}(G(k)) - \gamma \cdot \text{Violations}(G(k)),
+\]
+where $\text{Cost}(\cdot)$ captures communication/edge budget and $\text{Violations}(\cdot)$ penalizes invalid graphs.
+
+\vspace{0.4cm}
+
+\textbf{Milestones:}
+
+\textbf{Milestone 1: Baseline Graph, Spectral Gap, and Consensus Evaluation}  
+\begin{itemize}[leftmargin=1.2em]
+    \item Implement generators for common graph families (ring, grid, random geometric, Erd\H{o}s--R\'enyi, small-world).
+    \item Implement Laplacian construction and compute $\lambda_2(L)$ (spectral gap) via eigen-decomposition.
+    \item Implement discrete-time consensus and define convergence metrics (disagreement energy, convergence time, rate estimates).
+    \item Establish baseline trade-offs: $\lambda_2$ vs convergence speed vs edge count.
+    \item Deliver plots and reproducible scripts demonstrating the relationship between topology and convergence.
+\end{itemize}
+
+\textbf{Milestone 2: RL for Spectral Gap Optimization (Edge Reweighting)}  
+\begin{itemize}[leftmargin=1.2em]
+    \item Define an RL environment: state features from the current graph (degree statistics, local neighborhoods, or Laplacian spectral summaries) and current performance metrics.
+    \item Implement a constrained action space for \textbf{edge reweighting} (continuous actions) with budgets (e.g., $\sum_{(i,j)\in E} w_{ij}\le B$ and $w_{ij}\in[0,w_{\max}]$).
+    \item Train an RL policy (e.g., PPO) to maximize $\lambda_2(L)$ under constraints.
+    \item Compare against non-learning baselines: uniform weights, Metropolis-type weights, and heuristic weight allocation (e.g., proportional to degree).
+    \item Report improvement in $\lambda_2$ and the induced speedup in consensus convergence.
+\end{itemize}
+
+\textbf{Milestone 3: Discrete Topology Control and Robustness Evaluation}  
+\begin{itemize}[leftmargin=1.2em]
+    \item Extend the RL action space to \textbf{discrete edge operations} (rewiring): add/remove edges subject to a fixed edge budget and degree limits.
+    \item Conduct robustness tests: random edge failures, node dropouts, packet loss models, and time-varying connectivity.
+    \item Evaluate multi-objective trade-offs: maximize $\lambda_2$ while minimizing communication cost and preserving connectivity.
+    \item (Optional) Geometry-based extension: random geometric graphs from agent positions; RL moves agents (bounded velocity) to increase $\lambda_2$.
+    \item Deliver final report with quantitative results, ablations (reward shaping, constraints), and demo visualizations.
+\end{itemize}
+
+\vspace{0.4cm}
+
+\textbf{Scope Note:} The primary guaranteed deliverable is an RL framework for \textbf{spectral gap maximization via edge reweighting} with clear improvements in $\lambda_2(L)$ and measured acceleration of consensus convergence. Discrete rewiring and geometry-based motion are extensions pursued if time permits.
+
+\end{document}

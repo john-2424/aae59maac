@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/
+env/
+
+results/
+runs/
+*.pt
+*.ckpt
+
+.ipynb_checkpoints/
+.DS_Store
