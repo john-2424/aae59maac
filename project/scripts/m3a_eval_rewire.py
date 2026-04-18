@@ -168,7 +168,8 @@ def main() -> None:
             all_traces["greedy"].append(trace_greedy)
 
         def _auc(t: list[float]) -> float:
-            return float(np.trapz(np.asarray(t)))
+            trapezoid = getattr(np, "trapezoid", getattr(np, "trapz", None))
+            return float(trapezoid(np.asarray(t)))
 
         rows.append({"seed": seed, "policy": "ppo", "lambda2_final": trace_ppo[-1], "lambda2_auc": _auc(trace_ppo)})
         rows.append({"seed": seed, "policy": "random", "lambda2_final": trace_rand[-1], "lambda2_auc": _auc(trace_rand)})
