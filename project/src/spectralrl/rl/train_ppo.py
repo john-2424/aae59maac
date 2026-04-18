@@ -86,8 +86,8 @@ def train(
         actor_network=actor,
         critic_network=critic,
         clip_epsilon=float(ppo_cfg["clip_epsilon"]),
-        entropy_coef=float(ppo_cfg.get("entropy_coef", 0.0)),
-        critic_coef=float(ppo_cfg.get("critic_coef", 1.0)),
+        entropy_coeff=float(ppo_cfg.get("entropy_coef", 0.0)),
+        critic_coeff=float(ppo_cfg.get("critic_coef", 1.0)),
         loss_critic_type="smooth_l1",
     )
     optim = torch.optim.Adam(loss_module.parameters(), lr=float(ppo_cfg["lr"]))

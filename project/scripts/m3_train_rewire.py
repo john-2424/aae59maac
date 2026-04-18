@@ -105,8 +105,8 @@ def main() -> None:
         actor_network=actor,
         critic_network=critic,
         clip_epsilon=float(ppo["clip_epsilon"]),
-        entropy_coef=float(ppo.get("entropy_coef", 0.01)),
-        critic_coef=float(ppo.get("critic_coef", 1.0)),
+        entropy_coeff=float(ppo.get("entropy_coef", 0.01)),
+        critic_coeff=float(ppo.get("critic_coef", 1.0)),
     )
     optim = torch.optim.Adam(loss.parameters(), lr=float(ppo["lr"]))
 
