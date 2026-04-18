@@ -47,6 +47,7 @@ def make_env(config: dict):
             beta=float(env_cfg["reward_beta"]), gamma=float(env_cfg["reward_gamma"])
         ),
         seed=seed,
+        perturb_p=float(env_cfg.get("perturb_p", 0.0)),
     )
     return ReweightEnv(cfg)
 

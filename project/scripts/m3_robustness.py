@@ -85,6 +85,7 @@ def main() -> None:
     parser.add_argument("--out", type=Path, default=Path("results/m3"))
     parser.add_argument("--failure-grid", type=float, nargs="+", default=[0.0, 0.1, 0.2, 0.3])
     parser.add_argument("--trials", type=int, default=20)
+    parser.add_argument("--label", type=str, default=None, help="tag added to CSV for overlay plots")
     args = parser.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
 
@@ -112,12 +113,13 @@ def main() -> None:
     weights_by_policy = {"uniform": W_uniform, "metropolis": W_metro, "ppo": W_ppo}
 
     rng = np.random.default_rng(seed)
+    label = args.label or "default"
     rows: list[dict] = []
     for p in args.failure_grid:
         for name, W in weights_by_policy.items():
             lam2, tau = _evaluate(W, p, args.trials, rng)
-            rows.append({"failure_p": p, "policy": name, "lambda2": lam2, "tau": tau})
-            print(f"p={p:.2f} policy={name:<10s} lam2={lam2:.4f} tau={tau:.1f}")
+            rows.append({"label": label, "failure_p": p, "policy": name, "lambda2": lam2, "tau": tau})
+            print(f"[{label}] p={p:.2f} policy={name:<10s} lam2={lam2:.4f} tau={tau:.1f}")
 
     csv_path = args.out / "robustness.csv"
     with csv_path.open("w", newline="") as f:

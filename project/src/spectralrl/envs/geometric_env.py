@@ -27,6 +27,9 @@ class GeometricEnvConfig:
     world: float = 1.0
     episode_len: int = 200
     motion_cost: float = 0.01
+    r_min: float = 0.08            # pairwise-distance floor; distances below incur collision penalty
+    collision_penalty: float = 1.0
+    spread_bonus: float = 0.1      # bonus on mean pairwise distance (discourages collapse)
     reward: RewardConfig = field(default_factory=RewardConfig)
     seed: int | None = None
 
@@ -64,14 +67,37 @@ class GeometricSwarmEnv(gym.Env):
         v = np.clip(v, -1.0, 1.0) * self.cfg.v_max
         self._pos = np.clip(self._pos + v, 0.0, self.cfg.world)
 
-        W = self._adjacency()
-        lam2 = fiedler_value(laplacian(W))
+        diff = self._pos[:, None, :] - self._pos[None, :, :]
+        d = np.linalg.norm(diff, axis=-1)
+        W = (d <= self.cfg.radius).astype(np.float64)
+        np.fill_diagonal(W, 0.0)
+
+        lam2 = fiedler_value(laplacian(W)) if W.sum() > 0 else 0.0
         motion = float(np.linalg.norm(v, axis=1).sum())
-        reward = lam2 - self.cfg.motion_cost * motion
+
+        # Collision term: sum over upper triangle of max(0, r_min - d_ij)^2.
+        iu = np.triu_indices(self.n, k=1)
+        d_upper = d[iu]
+        violations = np.clip(self.cfg.r_min - d_upper, a_min=0.0, a_max=None)
+        collision = float((violations ** 2).sum())
+        min_dist = float(d_upper.min()) if d_upper.size else 0.0
+
+        # Spread term: mean pairwise distance (encourages dispersion).
+        spread = float(d_upper.mean()) if d_upper.size else 0.0
+
+        reward = (
+            lam2
+            - self.cfg.motion_cost * motion
+            - self.cfg.collision_penalty * collision
+            + self.cfg.spread_bonus * spread
+        )
         info = {
             "lambda2": float(lam2),
             "motion": motion,
             "edges": float(np.triu(W, k=1).sum()),
+            "collision": collision,
+            "min_dist": min_dist,
+            "spread": spread,
         }
         self._last_info = info
         self._step += 1

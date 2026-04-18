@@ -9,6 +9,7 @@ import numpy as np
 from gymnasium import spaces
 
 from ..graphs.laplacian import laplacian
+from ..robustness.perturbations import random_edge_failure
 from .common import (
     FeatureExtractor,
     RewardConfig,
@@ -28,6 +29,7 @@ class ReweightEnvConfig:
     reward: RewardConfig = field(default_factory=RewardConfig)
     top_k_eigs: int = 4
     seed: int | None = None
+    perturb_p: float = 0.0  # per-step edge-failure prob applied *before* reward (for robust training)
 
 
 class ReweightEnv(gym.Env):
@@ -50,6 +52,7 @@ class ReweightEnv(gym.Env):
         self.budget = float(cfg.budget) if cfg.budget is not None else float(self.m) * self.w_max
         self.episode_len = int(cfg.episode_len)
         self.reward_cfg = cfg.reward
+        self.perturb_p = float(cfg.perturb_p)
         self.features = FeatureExtractor(self.n, self.m, top_k=cfg.top_k_eigs)
 
         self.action_space = spaces.Box(
@@ -90,7 +93,11 @@ class ReweightEnv(gym.Env):
         self._w = w
 
         W = weights_vector_to_matrix(w, self.edge_index, self.n)
-        L = laplacian(W)
+        if self.perturb_p > 0.0:
+            W_eff = random_edge_failure(W, self.perturb_p, rng=self._rng)
+        else:
+            W_eff = W
+        L = laplacian(W_eff)
         reward, info = compute_reward(L, w, self.budget, self.reward_cfg)
         self._last_info = info
 
