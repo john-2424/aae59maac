@@ -1,4 +1,10 @@
-"""Milestone 2: evaluate a trained PPO policy against non-learning baselines."""
+"""Milestone 2: evaluate a trained PPO policy against non-learning baselines.
+
+The PPO actor's input/output dimensions are tied to the training graph's edge
+count ``m`` (obs_dim = 4 + top_k + m + 2, act_dim = m), so evaluation must run
+on the exact training support. We reconstruct it deterministically from the
+ckpt's config and vary only the consensus initial-condition seed for stats.
+"""
 
 from __future__ import annotations
 
@@ -19,29 +25,23 @@ from spectralrl.rl.policy import build_actor
 from spectralrl.utils import save_manifest, set_seed
 
 
-def _load_actor(ckpt_path: Path, obs_dim: int, act_dim: int, hidden):
-    actor = build_actor(obs_dim, act_dim, hidden=hidden)
-    ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
-    actor.load_state_dict(ckpt["actor"])
-    actor.eval()
-    return actor, ckpt
-
-
-def _held_out_supports(n: int, seeds: list[int]) -> list[tuple[str, np.ndarray]]:
-    out = []
-    for s in seeds:
-        out.append(("ring", ring(n)[0]))
-        out.append(("erdos_renyi", erdos_renyi(n, 0.25, seed=1000 + s)[0]))
-        out.append(("watts_strogatz", watts_strogatz(n, 4, 0.1, seed=2000 + s)[0]))
-    return out
+def _support(family: str, n: int, seed: int) -> np.ndarray:
+    if family == "ring":
+        W, _ = ring(n)
+    elif family == "erdos_renyi":
+        W, _ = erdos_renyi(n, 0.25, seed=seed)
+    elif family == "watts_strogatz":
+        W, _ = watts_strogatz(n, 4, 0.1, seed=seed)
+    else:
+        raise ValueError(f"unknown family: {family}")
+    return W
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--ckpt", type=Path, required=True)
     parser.add_argument("--out", type=Path, default=Path("results/m2"))
-    parser.add_argument("--n", type=int, default=20)
-    parser.add_argument("--seeds", type=int, nargs="+", default=[11, 22, 33, 44, 55])
+    parser.add_argument("--x0-seeds", type=int, nargs="+", default=[11, 22, 33, 44, 55])
     args = parser.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
 
@@ -50,31 +50,37 @@ def main() -> None:
     hidden = tuple(config["ppo"].get("hidden_sizes", [128, 128]))
     set_seed(int(config.get("seed", 0)))
 
-    supports = _held_out_supports(args.n, args.seeds)
-    # For eval we instantiate the actor with the ckpt's known dims.
+    env_cfg = config["env"]
+    family = env_cfg["graph_families"][0]
+    n = int(env_cfg["n"])
+    seed = int(config.get("seed", 0))
+    support = _support(family, n, seed)
+
     actor = build_actor(ckpt["obs_dim"], ckpt["act_dim"], hidden=hidden)
     actor.load_state_dict(ckpt["actor"])
     actor.eval()
 
     records = evaluate_policy_vs_baselines(
         actor,
-        supports,
-        budget=None,
-        w_max=float(config["env"]["w_max"]),
-        episode_len=int(config["env"]["episode_len"]),
-        seed=int(config.get("seed", 0)),
+        support=support,
+        graph_name=family,
+        w_max=float(env_cfg["w_max"]),
+        budget=env_cfg.get("budget"),
+        episode_len=int(env_cfg["episode_len"]),
+        x0_seeds=list(args.x0_seeds),
+        env_seed=seed,
     )
 
     csv_path = args.out / "eval.csv"
     with csv_path.open("w", newline="") as f:
         w = csv.writer(f)
-        w.writerow(["graph", "policy", "lambda2", "tau_eps", "rate", "cost"])
+        w.writerow(["graph", "policy", "lambda2", "tau_eps", "rate", "cost", "x0_seed"])
         for r in records:
-            w.writerow([r.graph, r.policy, r.lambda2, r.tau_eps, r.rate, r.cost])
+            w.writerow([r.graph, r.policy, r.lambda2, r.tau_eps, r.rate, r.cost, r.x0_seed])
 
     _boxplot(records, args.out / "lambda2_by_policy.png", metric="lambda2")
     _boxplot(records, args.out / "tau_by_policy.png", metric="tau_eps")
-    save_manifest(args.out, {"ckpt": str(args.ckpt), "n": args.n})
+    save_manifest(args.out, {"ckpt": str(args.ckpt), "family": family, "n": n})
     print(f"wrote {csv_path}")
 
 
@@ -87,7 +93,7 @@ def _boxplot(records, path: Path, metric: str) -> None:
     fig, ax = plt.subplots(figsize=(5, 4))
     ax.boxplot(data, labels=policies, showmeans=True)
     ax.set_ylabel(metric)
-    ax.set_title(f"{metric} by policy (held-out graphs)")
+    ax.set_title(f"{metric} by policy (training support, x0 seeds)")
     ax.grid(True, axis="y", linewidth=0.3)
     fig.tight_layout()
     fig.savefig(path, dpi=150)
