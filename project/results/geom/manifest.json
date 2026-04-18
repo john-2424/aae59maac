@@ -1,0 +1,9 @@
+{
+  "git_hash": "340d6464eb79fd03f9f8ff791f6a85651c111e02",
+  "config": {
+    "n": 30,
+    "steps": 200,
+    "seed": 0,
+    "radius": 0.25
+  }
+}

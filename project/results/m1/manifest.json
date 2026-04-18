@@ -1,0 +1,12 @@
+{
+  "git_hash": "340d6464eb79fd03f9f8ff791f6a85651c111e02",
+  "config": {
+    "sizes": [
+      20,
+      50,
+      100
+    ],
+    "seed": 0,
+    "quick": false
+  }
+}

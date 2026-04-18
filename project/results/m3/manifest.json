@@ -1,0 +1,8 @@
+{
+  "git_hash": "340d6464eb79fd03f9f8ff791f6a85651c111e02",
+  "config": {
+    "ckpt": "runs/m2/best.pt",
+    "family": "ring",
+    "n": 20
+  }
+}

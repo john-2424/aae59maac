@@ -8,10 +8,10 @@ __pycache__/
 venv/
 env/
 
-results/
-runs/
-*.pt
-*.ckpt
+# results/
+# runs/
+# *.pt
+# *.ckpt
 
 .ipynb_checkpoints/
 .DS_Store

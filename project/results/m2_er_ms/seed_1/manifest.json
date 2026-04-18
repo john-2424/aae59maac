@@ -1,0 +1,9 @@
+{
+  "git_hash": "ce713526b572a835e508aff72a8fdbc17e3cffd9",
+  "config": {
+    "ckpt": "runs/m2_er_ms/seed_1/best.pt",
+    "family": "erdos_renyi",
+    "n": 20,
+    "lambda2_sdp": null
+  }
+}
