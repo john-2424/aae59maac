@@ -1,0 +1,35 @@
+seed: 0
+device: cpu
+
+env:
+  n: 20
+  radius: 0.25
+  v_max: 0.02
+  episode_len: 100
+  motion_cost: 0.005
+  r_min: 0.08
+  collision_penalty: 0.5
+  spread_bonus: 0.0
+  # v3 fix: switch to a Gaussian (smooth) edge-weight kernel.
+  # With binary kernel, the initial RGG was often disconnected for n=20, r=0.25,
+  # and lambda2(L)=0 for any disconnected graph -> PPO had no learning signal
+  # (v1+v2 train_log mean_reward stayed in [-0.003, +0.010]).
+  # Gaussian: W_ij = exp(-(d_ij/r)^2). Strictly positive, so lambda2 > 0 even
+  # when no pair is within `radius`. Provides a usable distance-aware gradient
+  # toward closer agents.
+  weight_kernel: gaussian
+  init_connected: false   # not needed under gaussian kernel
+
+ppo:
+  total_frames: 200000
+  frames_per_batch: 3200
+  sub_batch_size: 256
+  num_epochs: 10
+  clip_epsilon: 0.2
+  gamma: 0.99
+  lmbda: 0.95
+  entropy_coef: 0.01
+  critic_coef: 1.0
+  lr: 3.0e-4
+  max_grad_norm: 1.0
+  hidden_sizes: [128, 128]

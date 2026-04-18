@@ -28,6 +28,8 @@ def make_env(config: dict):
         r_min=float(env_cfg.get("r_min", 0.08)),
         collision_penalty=float(env_cfg.get("collision_penalty", 1.0)),
         spread_bonus=float(env_cfg.get("spread_bonus", 0.1)),
+        weight_kernel=str(env_cfg.get("weight_kernel", "binary")),
+        init_connected=bool(env_cfg.get("init_connected", False)),
         seed=seed,
     )
     return GeometricSwarmEnv(cfg)

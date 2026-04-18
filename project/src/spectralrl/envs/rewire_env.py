@@ -30,6 +30,11 @@ class RewireEnvConfig:
     reward: RewardConfig = field(default_factory=RewardConfig)
     top_k_eigs: int = 4
     seed: int | None = None
+    # When True, reset() draws a fresh ER(n, p_resample) graph each episode
+    # instead of copying init_adj. Required for the actor to generalize across
+    # graph topologies — without it, PPO overfits to one specific graph.
+    resample_init: bool = False
+    p_resample: float = 0.2
 
 
 class RewireEnv(gym.Env):
@@ -60,10 +65,27 @@ class RewireEnv(gym.Env):
     def reset(self, *, seed: int | None = None, options: dict | None = None):
         if seed is not None:
             self._rng = np.random.default_rng(seed)
-        self._A = (self.cfg.init_adj > 0).astype(np.float64)
-        np.fill_diagonal(self._A, 0.0)
+        if self.cfg.resample_init:
+            # Reject disconnected draws (rare for p≥0.2, n=20) so eval metric is meaningful.
+            for _ in range(64):
+                A = self._sample_er(self.cfg.p_resample)
+                if is_connected(A):
+                    self._A = A
+                    break
+            else:
+                self._A = A  # fall back to last draw even if not connected
+        else:
+            self._A = (self.cfg.init_adj > 0).astype(np.float64)
+            np.fill_diagonal(self._A, 0.0)
         self._step = 0
         return self._observation(), {}
+
+    def _sample_er(self, p: float) -> np.ndarray:
+        n = self.n
+        upper = (self._rng.random((n, n)) < p).astype(np.float64)
+        upper = np.triu(upper, k=1)
+        A = upper + upper.T
+        return A
 
     def step(self, action: int):
         i, j = map(int, self.pair_index[int(action)])

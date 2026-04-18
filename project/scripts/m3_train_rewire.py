@@ -22,17 +22,24 @@ def make_env(config: dict):
     env_cfg = config["env"]
     n = int(env_cfg["n"])
     seed = int(config.get("seed", 0))
-    A, _ = erdos_renyi(n, 0.2, seed=seed)
+    p = float(env_cfg.get("er_p", 0.2))
+    A, _ = erdos_renyi(n, p, seed=seed)
+    # Budget sized off expected edge count when resampling, so it stays sane.
+    resample = bool(env_cfg.get("resample_init", False))
+    expected_edges = (n * (n - 1) / 2) * p
+    base_edges = expected_edges if resample else float(np.triu(A > 0, k=1).sum())
     cfg = RewireEnvConfig(
         n=n,
         init_adj=A,
-        edge_budget=int(1.5 * np.triu(A > 0, k=1).sum()),
+        edge_budget=int(1.5 * base_edges),
         degree_cap=None,
         episode_len=int(env_cfg.get("episode_len", 64)),
         reward=RewardConfig(
             beta=float(env_cfg["reward_beta"]), gamma=float(env_cfg["reward_gamma"])
         ),
         seed=seed,
+        resample_init=resample,
+        p_resample=p,
     )
     return RewireEnv(cfg)
 

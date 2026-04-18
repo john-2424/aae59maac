@@ -1,0 +1,32 @@
+seed: 0
+device: cpu
+
+env:
+  n: 20
+  episode_len: 64
+  reward_beta: 0.0
+  reward_gamma: 1.0
+  # v3 fix: train across a distribution of ER graphs each episode.
+  # v2 trained on a single fixed init_adj — PPO memorized one graph and lost
+  # to random on holdout seeds. resample_init forces the actor to learn a
+  # graph-conditioned policy from observations rather than action-index priors.
+  resample_init: true
+  er_p: 0.2
+
+ppo:
+  total_frames: 400000
+  frames_per_batch: 4096
+  sub_batch_size: 256
+  num_epochs: 10
+  clip_epsilon: 0.2
+  gamma: 0.99
+  lmbda: 0.95
+  entropy_coef: 0.01
+  critic_coef: 1.0
+  lr: 3.0e-4
+  max_grad_norm: 1.0
+  hidden_sizes: [128, 128]
+
+eval:
+  n_episodes: 32
+  graph_families_heldout: [erdos_renyi]

@@ -15,7 +15,7 @@ import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
 
-from ..graphs.laplacian import fiedler_value, laplacian
+from ..graphs.laplacian import fiedler_value, is_connected, laplacian
 from .common import RewardConfig
 
 
@@ -32,6 +32,13 @@ class GeometricEnvConfig:
     spread_bonus: float = 0.1      # bonus on mean pairwise distance (discourages collapse)
     reward: RewardConfig = field(default_factory=RewardConfig)
     seed: int | None = None
+    # "binary": W_ij = 1 iff d_ij <= radius (matches RGG definition; lambda2=0 when disconnected → no signal).
+    # "gaussian": W_ij = exp(-(d_ij/radius)^2). Smooth, strictly positive, lambda2 always > 0
+    # for any finite arrangement. Provides a usable gradient even for disconnected RGG topology.
+    weight_kernel: str = "binary"
+    # Reject disconnected initial draws (binary kernel only) so the first reward is meaningful.
+    init_connected: bool = False
+    init_max_resample: int = 64
 
 
 class GeometricSwarmEnv(gym.Env):
@@ -59,6 +66,11 @@ class GeometricSwarmEnv(gym.Env):
         if seed is not None:
             self._rng = np.random.default_rng(seed)
         self._pos = self._rng.random((self.n, 2)) * self.cfg.world
+        if self.cfg.init_connected and self.cfg.weight_kernel == "binary":
+            for _ in range(self.cfg.init_max_resample):
+                if is_connected(self._adjacency()):
+                    break
+                self._pos = self._rng.random((self.n, 2)) * self.cfg.world
         self._step = 0
         return self._observation(), {}
 
@@ -69,8 +81,7 @@ class GeometricSwarmEnv(gym.Env):
 
         diff = self._pos[:, None, :] - self._pos[None, :, :]
         d = np.linalg.norm(diff, axis=-1)
-        W = (d <= self.cfg.radius).astype(np.float64)
-        np.fill_diagonal(W, 0.0)
+        W = self._weights_from_distance(d)
 
         lam2 = fiedler_value(laplacian(W)) if W.sum() > 0 else 0.0
         motion = float(np.linalg.norm(v, axis=1).sum())
@@ -106,12 +117,22 @@ class GeometricSwarmEnv(gym.Env):
         return self._observation(), float(reward), terminated, truncated, info
 
     # ---------------------------------------------------------------- internals
+    def _weights_from_distance(self, d: np.ndarray) -> np.ndarray:
+        if self.cfg.weight_kernel == "gaussian":
+            # exp(-(d/r)^2). Smooth, strictly positive everywhere → lambda2 > 0
+            # even when no pair is within `radius`. Truncate negligible weights
+            # at d > 3r so the graph stays effectively local.
+            W = np.exp(-(d / self.cfg.radius) ** 2)
+            W[d > 3.0 * self.cfg.radius] = 0.0
+        else:
+            W = (d <= self.cfg.radius).astype(np.float64)
+        np.fill_diagonal(W, 0.0)
+        return W
+
     def _adjacency(self) -> np.ndarray:
         diff = self._pos[:, None, :] - self._pos[None, :, :]
         d = np.linalg.norm(diff, axis=-1)
-        W = (d <= self.cfg.radius).astype(np.float64)
-        np.fill_diagonal(W, 0.0)
-        return W
+        return self._weights_from_distance(d)
 
     def _observation(self) -> np.ndarray:
         W = self._adjacency()
