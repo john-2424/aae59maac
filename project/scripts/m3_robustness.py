@@ -1,8 +1,10 @@
-"""Milestone 3b: robustness evaluation under perturbations.
+"""Milestone 3b: robustness evaluation under edge-failure perturbations.
 
-Sweeps edge-failure and node-dropout probabilities; for each, compares
-``lambda_2`` and convergence time of the baseline weighting vs the PPO
-policy's weighting. Produces degradation curves.
+Sweeps edge-failure probability and compares lambda_2 / convergence time of
+PPO-weighted edges vs uniform / Metropolis baselines. The PPO actor is tied
+to a specific training graph (obs/action dims depend on edge count ``m``),
+so we reconstruct the exact training support from the ckpt's config and
+perturb edges of that support.
 """
 
 from __future__ import annotations
@@ -17,25 +19,36 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+from tensordict import TensorDict
 from torchrl.envs.utils import ExplorationType, set_exploration_type
 
 from spectralrl.baselines.weights import metropolis_weights, uniform_weights
 from spectralrl.consensus import convergence_time, run_consensus, stable_step_size
 from spectralrl.envs.reweight_env import ReweightEnv, ReweightEnvConfig
-from spectralrl.graphs import erdos_renyi, fiedler_value, laplacian
+from spectralrl.graphs import erdos_renyi, fiedler_value, laplacian, ring, watts_strogatz
 from spectralrl.rl.policy import build_actor
-from spectralrl.robustness import node_dropout, random_edge_failure
+from spectralrl.robustness import random_edge_failure
 from spectralrl.utils import save_manifest, set_seed
 
 
-def _policy_weights(actor, A: np.ndarray, w_max: float, episode_len: int, seed: int) -> np.ndarray:
-    cfg = ReweightEnvConfig(support=A, w_max=w_max, budget=None, episode_len=episode_len, seed=seed)
+def _support(family: str, n: int, seed: int) -> np.ndarray:
+    if family == "ring":
+        W, _ = ring(n)
+    elif family == "erdos_renyi":
+        W, _ = erdos_renyi(n, 0.25, seed=seed)
+    elif family == "watts_strogatz":
+        W, _ = watts_strogatz(n, 4, 0.1, seed=seed)
+    else:
+        raise ValueError(f"unknown family: {family}")
+    return W
+
+
+def _policy_weights(actor, A: np.ndarray, w_max: float, budget, episode_len: int, seed: int) -> np.ndarray:
+    cfg = ReweightEnvConfig(support=A, w_max=w_max, budget=budget, episode_len=episode_len, seed=seed)
     env = ReweightEnv(cfg)
     obs, _ = env.reset(seed=seed)
     done = truncated = False
     while not (done or truncated):
-        from tensordict import TensorDict
-
         td = TensorDict(
             {"observation": torch.tensor(np.asarray(obs), dtype=torch.float32).unsqueeze(0)},
             batch_size=[1],
@@ -48,8 +61,7 @@ def _policy_weights(actor, A: np.ndarray, w_max: float, episode_len: int, seed: 
 
 
 def _evaluate(W: np.ndarray, failure_p: float, n_trials: int, rng: np.random.Generator) -> tuple[float, float]:
-    lam2s = []
-    taus = []
+    lam2s, taus = [], []
     for _ in range(n_trials):
         Wp = random_edge_failure(W, failure_p, rng=rng)
         if Wp.sum() == 0:
@@ -69,10 +81,8 @@ def _evaluate(W: np.ndarray, failure_p: float, n_trials: int, rng: np.random.Gen
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--ckpt", type=Path, required=True)
+    parser.add_argument("--ckpt", type=Path, default=Path("runs/m2/best.pt"))
     parser.add_argument("--out", type=Path, default=Path("results/m3"))
-    parser.add_argument("--n", type=int, default=20)
-    parser.add_argument("--seeds", type=int, nargs="+", default=[11, 22, 33])
     parser.add_argument("--failure-grid", type=float, nargs="+", default=[0.0, 0.1, 0.2, 0.3])
     parser.add_argument("--trials", type=int, default=20)
     args = parser.parse_args()
@@ -80,28 +90,34 @@ def main() -> None:
 
     ckpt = torch.load(args.ckpt, map_location="cpu", weights_only=False)
     config = ckpt["config"]
+    env_cfg = config["env"]
     set_seed(int(config.get("seed", 0)))
+
+    family = env_cfg["graph_families"][0]
+    n = int(env_cfg["n"])
+    seed = int(config.get("seed", 0))
+    A = _support(family, n, seed)
+    w_max = float(env_cfg["w_max"])
+    budget = env_cfg.get("budget")
+    episode_len = int(env_cfg["episode_len"])
+
     hidden = tuple(config["ppo"].get("hidden_sizes", [128, 128]))
     actor = build_actor(ckpt["obs_dim"], ckpt["act_dim"], hidden=hidden)
     actor.load_state_dict(ckpt["actor"])
     actor.eval()
 
-    rng = np.random.default_rng(int(config.get("seed", 0)))
+    W_uniform = uniform_weights(A, budget=float(n) if budget is None else float(budget), w_max=w_max)
+    W_metro = metropolis_weights(A)
+    W_ppo = _policy_weights(actor, A, w_max=w_max, budget=budget, episode_len=episode_len, seed=seed)
+    weights_by_policy = {"uniform": W_uniform, "metropolis": W_metro, "ppo": W_ppo}
+
+    rng = np.random.default_rng(seed)
     rows: list[dict] = []
-    for seed in args.seeds:
-        A, _ = erdos_renyi(args.n, 0.25, seed=seed)
-        W_uniform = uniform_weights(A, budget=float(args.n), w_max=1.0)
-        W_metro = metropolis_weights(A)
-        W_ppo = _policy_weights(
-            actor, A, w_max=float(config["env"]["w_max"]),
-            episode_len=int(config["env"]["episode_len"]), seed=seed,
-        )
-        weights_by_policy = {"uniform": W_uniform, "metropolis": W_metro, "ppo": W_ppo}
-        for p in args.failure_grid:
-            for name, W in weights_by_policy.items():
-                lam2, tau = _evaluate(W, p, args.trials, rng)
-                rows.append({"seed": seed, "failure_p": p, "policy": name, "lambda2": lam2, "tau": tau})
-                print(f"seed={seed} p={p:.2f} policy={name:<10s} lam2={lam2:.4f} tau={tau:.1f}")
+    for p in args.failure_grid:
+        for name, W in weights_by_policy.items():
+            lam2, tau = _evaluate(W, p, args.trials, rng)
+            rows.append({"failure_p": p, "policy": name, "lambda2": lam2, "tau": tau})
+            print(f"p={p:.2f} policy={name:<10s} lam2={lam2:.4f} tau={tau:.1f}")
 
     csv_path = args.out / "robustness.csv"
     with csv_path.open("w", newline="") as f:
@@ -111,7 +127,7 @@ def main() -> None:
 
     _plot_curve(rows, args.out / "robustness_lambda2.png", metric="lambda2", ylabel=r"$\lambda_2$")
     _plot_curve(rows, args.out / "robustness_tau.png", metric="tau", ylabel=r"$\tau_\epsilon$")
-    save_manifest(args.out, {"ckpt": str(args.ckpt), "n": args.n})
+    save_manifest(args.out, {"ckpt": str(args.ckpt), "family": family, "n": n})
     print(f"wrote {csv_path}")
 
 

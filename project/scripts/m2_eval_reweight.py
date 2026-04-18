@@ -91,7 +91,7 @@ def _boxplot(records, path: Path, metric: str) -> None:
     policies = sorted(by_policy.keys())
     data = [by_policy[p] for p in policies]
     fig, ax = plt.subplots(figsize=(5, 4))
-    ax.boxplot(data, labels=policies, showmeans=True)
+    ax.boxplot(data, tick_labels=policies, showmeans=True)
     ax.set_ylabel(metric)
     ax.set_title(f"{metric} by policy (training support, x0 seeds)")
     ax.grid(True, axis="y", linewidth=0.3)
