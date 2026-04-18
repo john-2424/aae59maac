@@ -17,6 +17,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+from torchrl.envs.utils import ExplorationType, set_exploration_type
 
 from spectralrl.baselines.weights import metropolis_weights, uniform_weights
 from spectralrl.consensus import convergence_time, run_consensus, stable_step_size
@@ -39,9 +40,9 @@ def _policy_weights(actor, A: np.ndarray, w_max: float, episode_len: int, seed: 
             {"observation": torch.tensor(np.asarray(obs), dtype=torch.float32).unsqueeze(0)},
             batch_size=[1],
         )
-        with torch.no_grad():
-            td = actor.module(td)
-            a = torch.tanh(td["loc"]).squeeze(0).cpu().numpy()
+        with torch.no_grad(), set_exploration_type(ExplorationType.MODE):
+            td = actor(td)
+            a = td["action"].squeeze(0).cpu().numpy()
         obs, _, done, truncated, _ = env.step(a)
     return env.current_weights_matrix
 
