@@ -1,0 +1,9 @@
+{
+  "lambda2_sdp": 0.6598886198962309,
+  "family": "erdos_renyi",
+  "n": 20,
+  "budget": 25.0,
+  "w_max": 1.0,
+  "seed": 0,
+  "method": "cvxpy+SCS"
+}

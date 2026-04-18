@@ -1,0 +1,8 @@
+{
+  "git_hash": "db18bc29aba077dfd392bfd374f2c414904bf2df",
+  "config": {
+    "ckpt": "runs/m3a_v2/best.pt",
+    "n": 20,
+    "episode_len": 64
+  }
+}

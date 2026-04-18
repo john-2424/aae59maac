@@ -1,0 +1,43 @@
+{
+  "git_hash": "db18bc29aba077dfd392bfd374f2c414904bf2df",
+  "config": {
+    "device": "cpu",
+    "env": {
+      "budget": 25.0,
+      "consensus_T": 50,
+      "consensus_alpha": null,
+      "episode_len": 32,
+      "graph_families": [
+        "erdos_renyi"
+      ],
+      "n": 20,
+      "reward_beta": 0.0,
+      "reward_gamma": 0.0,
+      "w_max": 1.0
+    },
+    "eval": {
+      "graph_families_heldout": [
+        "erdos_renyi"
+      ],
+      "n_episodes": 32
+    },
+    "ppo": {
+      "clip_epsilon": 0.2,
+      "critic_coef": 1.0,
+      "entropy_coef": 0.005,
+      "frames_per_batch": 4096,
+      "gamma": 0.99,
+      "hidden_sizes": [
+        128,
+        128
+      ],
+      "lmbda": 0.95,
+      "lr": 0.0003,
+      "max_grad_norm": 1.0,
+      "num_epochs": 10,
+      "sub_batch_size": 256,
+      "total_frames": 300000
+    },
+    "seed": 3
+  }
+}
