@@ -68,7 +68,7 @@ def evaluate_policy_vs_baselines(
                 {"observation": torch.tensor(np.asarray(obs), dtype=torch.float32).unsqueeze(0)},
                 batch_size=[1],
             )
-            with torch.no_grad(), set_exploration_type(ExplorationType.MODE):
+            with torch.no_grad(), set_exploration_type(ExplorationType.DETERMINISTIC):
                 td = actor(td)
                 action = td["action"].squeeze(0).cpu().numpy()
             obs, _, done, truncated, _ = env.step(action)
