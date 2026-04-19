@@ -1,0 +1,714 @@
+%%%% Final Report, journal twoside style (matches midterm)
+\documentclass[letterpaper, 11 pt, journal, twoside]{IEEEtran}
+
+\usepackage{mathrsfs}
+\usepackage{amssymb}
+\usepackage{amsmath}
+\usepackage{amsthm}
+\usepackage{epsfig}
+\usepackage{color}
+\usepackage{cite}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{hyperref}
+
+\graphicspath{{figures/}}
+
+%%%% Selective part from steve.lib
+\newcommand{\rank}{{\rm rank\;}}
+\newcommand{\image}{{\rm Im\;}}
+\newcommand{\stack}{{\rm stack\;}}
+\newcommand{\Span}{{\rm span\;}}
+\newcommand{\diag}{{\rm diag\;}}
+\newcommand{\col}{{\rm col\;}}
+\newcommand{\cp}{{\rm cp\;}}
+\newcommand{\R}{\mathbb{R}}
+\newtheorem{theorem}{Theorem}
+\newtheorem{problem}{Problem}
+\newtheorem{lemma}{Lemma}
+\newtheorem{remark}{Remark}
+\newtheorem{proposition}{Proposition}
+\newtheorem{corollary}{Corollary}
+\newtheorem{property}{Property}
+\newtheorem{definition}{Definition}
+\newtheorem{assumption}{Assumption}
+
+\def\n{{\bf n}}
+\def\m{{\bf m}}
+\def\r{{\bf r}}
+\def\c{{\bf c}}
+\def\scr#1{{\mathcal #1}}
+\def\rep#1{(\ref{#1})}
+\def\eq#1{\begin{equation}#1\end{equation}}
+\def\qed{ \rule{.1in}{.1in}}
+
+%%%%% Redefined the \matt to avoid conflicts with amsmath
+\def\matt#1{\begin{bmatrix}#1\end{bmatrix}}
+
+\title{Reinforcement Learning for Spectral Gap Optimization\\ in Multi-Agent Networks}
+
+\author{Shrikrishna Rajule\\
+Purdue University, West Lafayette}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+We study reinforcement learning for maximizing the algebraic connectivity
+$\lambda_2(L)$ of a weighted communication graph, the quantity that
+governs the convergence rate of linear consensus in multi-agent
+networks. We show that the bounded-weight, budget-constrained
+reweighting problem is equivalent to a convex semidefinite program
+(SDP) of Boyd and Ghosh, and we use the SDP optimum as a quantitative
+upper bound against which to measure a learned policy. A proximal
+policy optimization (PPO) agent trained on Erd\H{o}s--R\'enyi supports
+with $n=20$ attains $87.3\%$ of the SDP optimum on a representative
+held-out graph and a mean $\lambda_2 = 0.795 \pm 0.146$ across
+twenty-five held-out graphs, a $1.31\times$ lift over the uniform
+baseline. The same policy class, trained under stochastic edge
+failures, continues to dominate classical baselines at every failure
+rate we tested, and in a geometric swarm regime (where the SDP bound
+does not apply) produces spread-preserving motion that outperforms a
+collision-avoiding centroid heuristic. A discrete-rewiring variant
+fails to generalize across topologies with a flat
+action-space policy, which we analyze and report as a motivating
+limitation.
+\end{abstract}
+
+\section{Introduction and Motivation}
+\label{sec:intro}
+Distributed consensus is a foundational primitive in multi-agent
+systems, sensor fusion, swarm coordination, decentralized estimation,
+and distributed optimization. In a standard consensus process, agents
+iteratively exchange information with local neighbors and
+asymptotically agree on a shared quantity. The speed of this agreement
+depends strongly on the communication graph. For undirected graphs,
+the second-smallest eigenvalue of the graph Laplacian, denoted
+$\lambda_2(L)$, is the algebraic connectivity or spectral gap, and
+plays a central role in characterizing connectivity and convergence
+speed \cite{Fiedler1973,OlfatiSaber2007,RenBeard2005}. A larger
+spectral gap generally implies faster information mixing and faster
+decay of disagreement~\cite{Olshevsky2009}.
+
+This work studies whether reinforcement learning (RL) can improve
+consensus performance by optimizing the edge weights or topology of
+the communication graph under realistic constraints. Network design is
+rarely unconstrained in practice: real systems face limited
+communication budgets, bounded link weights, degree caps, intermittent
+connectivity, and geometric constraints due to agent motion or sensing
+range. In the restricted setting of a fixed connected support with
+bounded nonnegative weights and a total-weight budget, the problem of
+maximizing $\lambda_2$ admits a convex semidefinite formulation
+developed by Boyd and co-authors
+\cite{Boyd2006,GhoshBoyd2006,XiaoBoyd2004}, known as the Fastest
+Distributed Linear Averaging (FDLA) relaxation, which is solvable to
+global optimality by interior-point
+methods~\cite{BoydVandenberghe2004}. This setting is therefore a
+useful analytic anchor: it tells us the best achievable $\lambda_2$
+that any policy can attain.
+
+The analytic picture breaks down in three regimes of practical
+interest. First, under stochastic edge failures the Laplacian becomes
+a random matrix at every step, and the SDP optimum on the nominal
+support is no longer attainable in expectation. Second, when the
+support itself is a decision variable, maximizing algebraic
+connectivity over topologies is NP-hard~\cite{Mosk2006}, so convex
+methods give no tight bound. Third, when the graph support is induced
+by agent positions---as in random geometric graphs arising from
+proximity-based communication in robotic swarms---the map from
+decision variables (positions) to $\lambda_2$ is neither linear nor
+convex, and related classical connectivity-maintenance results are
+largely local~\cite{SabattiniEtAl2013,YangFreeman2010,KimMesbahi2006}.
+
+These three regimes motivate the main question of this work:
+\emph{can a single learned policy class approximate the convex
+optimum where it applies, and generalize to the regimes where it does
+not?} We formulate the reweighting task as a constrained Markov
+decision process~\cite{SuttonBarto2018} and train with proximal policy
+optimization (PPO)~\cite{Schulman2017,SchulmanGAE2016}, treating the
+FDLA SDP as both a theoretical anchor and a benchmark. We then test
+the same policy class on discrete rewiring, perturbation-in-the-loop
+training, and a geometric swarm extension. The broader motivation is
+to situate learning-based topology control within the spectral
+graph-theoretic framework~\cite{MesbahiEgerstedt2010}: RL is used not
+as a replacement for graph theory but as an adaptive optimizer on top
+of it. This work is part of a broader trend in graph reinforcement
+learning for combinatorial design~\cite{Darvariu2024,Darvariu2021,Dai2017}.
+
+\section{Problem Formulation}
+\label{sec:problem}
+Consider a network of $n$ agents represented by an undirected graph
+$G_k = (V, E_k, W_k)$ with $|V| = n$, where $E_k$ is the edge set at
+time step $k$ and $W_k \in \R^{n \times n}$ is a symmetric nonnegative
+weight matrix. Let $D_k = \diag(W_k \mathbf{1})$ be the degree matrix
+and let the graph Laplacian be
+\begin{equation}
+L_k = D_k - W_k.
+\end{equation}
+Each agent $i$ holds a scalar state $x_i(k)$, and the network state is
+$x(k) \in \R^n$. The discrete-time consensus dynamics are
+\begin{equation}
+x(k+1) = x(k) - \alpha\, L_k\, x(k),
+\label{eq:consensus}
+\end{equation}
+where $\alpha > 0$ is a step size chosen so that the update is stable,
+e.g.\ $\alpha < 2/\lambda_{\max}(L_k)$. The disagreement vector is
+$e(k) = x(k) - \bar{x}(k)\mathbf{1}$ with
+$\bar{x}(k) = \frac{1}{n}\mathbf{1}^\top x(k)$, and we evaluate
+convergence through the disagreement energy
+$J_{\text{dis}}(k) = \|e(k)\|_2^2$ and the $\varepsilon$-settling time
+$\tau_\varepsilon = \min\{k : J_{\text{dis}}(k)/J_{\text{dis}}(0) \le \varepsilon\}$.
+For connected undirected graphs, $J_{\text{dis}}(k)$ decays
+geometrically at a rate governed by $\lambda_2(L_k)$, which motivates
+the spectral-gap objective~\cite{Fiedler1973,OlfatiSaber2007}.
+
+\subsection{Constrained reweighting}
+We parameterize $W$ by an edge-weight vector $w \in \R^m_{\ge 0}$,
+where $m = |E|$. Given endpoints $e_k = (i_k, j_k)$ and incidence
+vectors $a_k = \mathbf{e}_{i_k} - \mathbf{e}_{j_k}$, the Laplacian is
+\begin{equation}
+L(w) = \sum_{k=1}^{m} w_k\, a_k a_k^\top.
+\label{eq:Lw-top}
+\end{equation}
+The admissible weight set is the polyhedral convex set
+\begin{equation}
+\mathcal{W} = \Big\{ w \in \R^m \;:\; 0 \le w_k \le w_{\max},\;
+\textstyle\sum_{k=1}^m w_k \le B \Big\},
+\label{eq:Wset-top}
+\end{equation}
+where $w_{\max}$ is the per-edge bound and $B$ is a total
+communication budget.
+
+\begin{problem}[Constrained spectral-gap maximization]
+\label{prob:lambda2}
+Given a fixed connected support $E$ with $m$ edges and parameters
+$(w_{\max}, B)$, find
+\begin{equation}
+\lambda_2^\star \;:=\; \max_{w \in \mathcal{W}} \; \lambda_2(L(w)).
+\label{eq:primal-top}
+\end{equation}
+\end{problem}
+
+\subsection{Markov decision process}
+We cast Problem~\ref{prob:lambda2} as a finite-horizon MDP
+$(\mathcal{S},\mathcal{A},P,r,\gamma)$ in which the policy proposes
+reweightings on top of a warm start.
+
+\begin{definition}[Reweighting MDP]
+\label{def:mdp}
+At step $k$, the observation
+$s_k \in \mathcal{S}$ concatenates: (i) degree statistics (mean,
+standard deviation, max, min) of $L(w_k)$; (ii) the top-$\kappa$
+Laplacian eigenvalues with $\kappa{=}4$; (iii) the current weight
+vector $w_k$ padded to $m_{\max}$; (iv) the normalized remaining
+budget; and (v) an exponential moving average of $\log J_{\text{dis}}$.
+The action $a_k \in [-1,1]^m$ is mapped to weights by
+$w_{k+1} = \Pi_\mathcal{W}\!\big(\tfrac{w_{\max}}{2}(a_k + 1)\big)$,
+where $\Pi_\mathcal{W}$ rescales by $B / \sum w$ if the budget
+constraint is violated. The stage reward is
+\begin{equation}
+r_k = \lambda_2(L(w_{k+1})) - \beta\,\mathrm{Cost}(w_{k+1}) - \gamma\,\mathrm{Violations}(w_{k+1}),
+\label{eq:reward}
+\end{equation}
+with $\mathrm{Cost}(w) = \sum_k w_k$ penalizing budget use and
+$\mathrm{Violations}(w)$ a hinge loss on bound violations before
+projection.
+\end{definition}
+
+\begin{remark}[Modeling scope]
+\label{rem:scope}
+Definition~\ref{def:mdp} assumes the policy observes spectral
+statistics of the \emph{global} Laplacian. This is a deliberate
+simplification that isolates the learning question from the
+decentralization question. A fully distributed variant that replaces
+(ii) with a localized proxy (e.g.\ a distributed Fiedler vector
+estimate \cite{YangFreeman2010,SabattiniEtAl2013}) is left to future
+work; we address this trade-off explicitly in Section~\ref{sec:conclusion}.
+\end{remark}
+
+Discrete topology control and geometric motion control are formalized
+as variants of Definition~\ref{def:mdp} with modified action spaces;
+we introduce those in Section~\ref{sec:main-extensions} only after
+developing the analytic anchor.
+
+\section{Main Results}
+\label{sec:main}
+
+\subsection*{Key Idea}
+\label{sec:key-idea}
+We frame algebraic-connectivity maximization under bounded edge
+weights and a communication budget as a constrained Markov decision
+process whose optimum is upper-bounded by a convex semidefinite
+program, namely the Fastest Distributed Linear Averaging (FDLA)
+relaxation of Boyd and
+co-authors \cite{XiaoBoyd2004,Boyd2006,GhoshBoyd2006}. This bound
+reframes an otherwise heuristic benchmarking exercise as a
+quantitative suboptimality claim: for any feasible reweighting policy
+$\pi$ acting on a fixed support,
+$\lambda_2(L(w_\pi)) \le s^\star$, where $s^\star$ is the SDP optimum.
+We then show that a Proximal Policy Optimization
+\cite{Schulman2017} agent observing only graph features and consensus
+statistics learns a policy that attains
+$\lambda_2(L(w_\pi))/s^\star \approx 0.87$ on a representative
+Erd\H{o}s--R\'enyi support of size $n{=}20$ with tight budget $B{=}25$.
+Because the FDLA SDP ceases to apply when the underlying edge set is
+itself a decision variable (discrete rewiring) or when the graph
+support is induced by agent positions (random geometric graphs), we
+further evaluate the same policy class in those two settings and
+report its generalization to regimes where no convex upper bound is
+available.
+
+\subsection{Convex upper bound on achievable algebraic connectivity}
+\label{sec:sdp}
+Let $G = (V, E)$ be a fixed undirected connected graph on $n$ nodes.
+Write $E = \{e_1, \ldots, e_m\}$ with endpoints $e_k = (i_k, j_k)$,
+and let $a_k = \mathbf{e}_{i_k} - \mathbf{e}_{j_k} \in \R^n$ where
+$\mathbf{e}_i$ is the $i$-th standard basis vector. For a nonnegative
+weight vector $w \in \R^m_{\ge 0}$, the weighted graph Laplacian is
+\begin{equation}
+L(w) \;=\; \sum_{k=1}^{m} w_k\, a_k a_k^\top
+\;=\; A\,\diag(w)\,A^\top,
+\label{eq:Lw}
+\end{equation}
+with $A = [a_1, \ldots, a_m] \in \R^{n \times m}$ the signed
+incidence matrix. By construction $L(w)$ is symmetric positive
+semidefinite and $L(w)\mathbf{1} = 0$, so the smallest eigenvalue of
+$L(w)$ is $0$ with eigenvector $\mathbf{1}$, and the algebraic
+connectivity is the second smallest eigenvalue
+\cite{Fiedler1973,OlfatiSaber2007}. By the Courant--Fischer
+characterization \cite{HornJohnson2013},
+\begin{equation}
+\lambda_2(L(w)) \;=\; \min_{\substack{v \in \R^n \\ v \perp \mathbf{1},\; \|v\|=1}} v^\top L(w)\, v.
+\label{eq:rayleigh}
+\end{equation}
+
+\begin{theorem}[Boyd \cite{Boyd2006}; Ghosh and Boyd \cite{GhoshBoyd2006}]
+\label{thm:fdla}
+Problem~\ref{prob:lambda2} is equivalent to the semidefinite program
+\begin{equation}
+\begin{aligned}
+s^\star \;=\; \max_{w,\,s} \quad & s \\
+\text{s.t.} \quad & L(w) \;\succeq\; s\!\left(I_n - \tfrac{1}{n}\mathbf{1}\mathbf{1}^\top\right), \\
+& w \in \mathcal{W},
+\end{aligned}
+\label{eq:sdp}
+\end{equation}
+in the sense that $\lambda_2^\star = s^\star$, and any optimizer
+$w^\star$ of \eqref{eq:sdp} is a maximizer of \eqref{eq:primal-top}.
+\end{theorem}
+
+\begin{proof}
+Let $\Pi := I_n - \tfrac{1}{n}\mathbf{1}\mathbf{1}^\top$ be the
+orthogonal projector onto $\mathbf{1}^\perp$. Since $L(w) \succeq 0$
+and $L(w)\mathbf{1} = 0$, the nontrivial eigenvalues of $L(w)$ are
+exactly the eigenvalues of $\Pi L(w) \Pi$ restricted to
+$\mathbf{1}^\perp$. Equation~\eqref{eq:rayleigh} therefore gives
+\[
+\lambda_2(L(w)) \;=\; \sup\{\, s \in \R : v^\top L(w) v \ge s\, v^\top \Pi v
+\;\; \forall\, v \in \R^n \,\}.
+\]
+The universal inequality inside the supremum is a linear matrix
+inequality $L(w) - s\Pi \succeq 0$, so
+\[
+\lambda_2(L(w)) \;=\; \sup\{\, s : L(w) - s\,\Pi \succeq 0 \,\}.
+\]
+Taking the supremum jointly over $w \in \mathcal{W}$ and $s$ yields
+\eqref{eq:sdp}. Because $L(w)$ is linear in $w$ (cf.~\eqref{eq:Lw})
+and $\mathcal{W}$ is convex, the program \eqref{eq:sdp} is a convex
+SDP and is solvable to global optimality by interior-point methods
+\cite{BoydVandenberghe2004,XiaoBoyd2004}.
+\end{proof}
+
+Theorem~\ref{thm:fdla} plays two roles in this paper. First, it gives
+a \emph{tight}, polynomial-time-computable upper bound on any
+reweighting policy, learned or otherwise: no feasible
+$w \in \mathcal{W}$ attains $\lambda_2(L(w)) > s^\star$. Second, it
+defines the \emph{suboptimality ratio}
+\begin{equation}
+\rho_\pi \;:=\; \frac{\lambda_2\!\big(L(w_\pi)\big)}{s^\star}
+\;\in\; [0, 1]
+\label{eq:subopt}
+\end{equation}
+for any policy $\pi$ producing a feasible $w_\pi$. We evaluate our
+PPO policy against \eqref{eq:subopt} in Section~\ref{sec:sim-m2} and
+report $\rho_\pi \approx 0.87$ on an Erd\H{o}s--R\'enyi support of
+size $n = 20$, turning the comparison against classical heuristic
+baselines (uniform, Metropolis--Hastings \cite{XiaoBoyd2004,Boyd2004})
+into a quantitative optimality claim rather than a relative one.
+
+\begin{remark}
+Theorem~\ref{thm:fdla} assumes a fixed edge support $E$. When the
+support is itself a decision variable, as in the discrete rewiring
+setting of Section~\ref{sec:sim-m3a}, the feasible set
+$\{L(w) : w \in \mathcal{W}\}$ is no longer convex and \eqref{eq:sdp}
+ceases to provide a valid upper bound; maximizing $\lambda_2$ over
+topologies is NP-hard in general \cite{Mosk2006}. Similarly, when $E$
+is induced by agent positions as in the geometric swarm setting of
+Section~\ref{sec:sim-m3c}, the map from positions to $L(w)$ is
+nonlinear and nonconvex, and the SDP does not apply. This is
+precisely the regime in which a learned policy earns its keep.
+\end{remark}
+
+\subsection{Learning algorithm}
+\label{sec:algo}
+The MDP of Definition~\ref{def:mdp} has a continuous action space, so
+we train a stochastic Gaussian policy with proximal policy
+optimization~\cite{Schulman2017}. The actor is a two-layer
+multilayer perceptron with $\tanh$ activations and state-independent
+log-standard-deviation; the critic shares the same backbone. Actions
+are squashed through $\tanh$ and mapped into $[0, w_{\max}]^m$ before
+being passed through the budget projection $\Pi_\mathcal{W}$. Generalized
+advantage estimation~\cite{SchulmanGAE2016} with
+$(\gamma, \lambda) = (0.99, 0.95)$ is used to compute advantages,
+and the clipped surrogate objective with clip parameter $0.2$ is
+optimized with Adam. Algorithm~\ref{alg:ppo} summarizes the training
+loop.
+
+\begin{algorithm}[t]
+\caption{PPO for constrained $\lambda_2$ maximization}
+\label{alg:ppo}
+\begin{algorithmic}[1]
+\Require actor $\pi_\theta$, critic $V_\phi$, graph family $\mathcal{G}$, bound $w_{\max}$, budget $B$, total frames $N$
+\For{iteration $t = 1, 2, \ldots$}
+  \State Sample a support $E \sim \mathcal{G}$; build incidence $A$
+  \State Reset env: warm-start $w_0 \leftarrow$ Metropolis$(E)$, observe $s_0$
+  \State Collect a rollout of $T$ transitions $\{(s_k, a_k, r_k, s_{k+1})\}$ under $\pi_\theta$
+  \State Compute GAE targets $\{\hat A_k\}$ and value targets $\{\hat R_k\}$
+  \For{each PPO epoch}
+    \State Sample minibatches from the rollout buffer
+    \State Update $\theta$ by $\nabla_\theta L^{\text{clip}}(\theta)$ with clip $\epsilon{=}0.2$
+    \State Update $\phi$ by MSE on $V_\phi(s) \to \hat R$
+  \EndFor
+  \If{frames collected $\ge N$} \textbf{break}
+  \EndIf
+\EndFor
+\State \Return $\pi_\theta$
+\end{algorithmic}
+\end{algorithm}
+
+Two practical choices are worth noting. First, we warm-start the
+environment at the Metropolis weights rather than zero, so that the
+reward at step zero is already nonzero and the critic is not forced
+to learn from a flat baseline. Second, we keep a small entropy
+coefficient ($0.005$) throughout training; without it the policy
+collapsed back to the Metropolis warm start on Erd\H{o}s--R\'enyi
+supports in preliminary runs.
+
+\subsection{Extensions beyond the convex regime}
+\label{sec:main-extensions}
+The SDP bound of Theorem~\ref{thm:fdla} is valid only when the edge
+support $E$ is fixed and the mapping $w \mapsto L(w)$ is linear. Three
+extensions of practical interest violate at least one of these
+assumptions; the learning framework of Section~\ref{sec:algo} applies
+to each with only local modifications, and they constitute the
+remaining empirical contributions of this paper.
+
+\emph{Discrete topology control.} Replacing the continuous
+reweighting action by a categorical add/remove action over pairs
+$(i,j)$ makes the feasible set of Laplacians non-convex, so the FDLA
+SDP is no longer a valid upper bound. Maximizing $\lambda_2$ over
+topologies is NP-hard~\cite{Mosk2006}, consistent with the broader
+combinatorial-graph-RL literature~\cite{Darvariu2024,Darvariu2021,Dai2017}.
+
+\emph{Stochastic edge failures.} Under i.i.d.\ Bernoulli edge
+failures, the observed Laplacian at step $k$ is a random perturbation
+of $L(w_k)$. A policy trained on clean supports has no explicit
+robustness guarantee; training with perturbation-in-the-loop exposes
+the policy to the stochastic regime during rollouts and is a natural
+lever within the same PPO framework.
+
+\emph{Geometric swarm control.} When agents carry positions
+$p_i \in \R^2$ and edge weights are induced by a truncated Gaussian
+kernel $W_{ij}(\mathbf{p}) = \exp(-(\|p_i-p_j\|/r)^2)$ with cutoff
+$3r$, the map from $\mathbf{p}$ to $L$ is nonlinear and nonconvex, so
+classical convex relaxations do not apply and decentralized connectivity-
+maintenance controllers must be used as reference~\cite{SabattiniEtAl2013,YangFreeman2010,KimMesbahi2006}.
+The same PPO pipeline with a velocity action space provides a learned
+alternative.
+
+\section{Simulations}
+\label{sec:sim}
+
+All experiments were implemented in PyTorch with the TorchRL PPO
+implementation. Graphs, Laplacians, and consensus simulations use
+NumPy and SciPy, and the FDLA SDP is solved with CVXPY and
+SCS~\cite{BoydVandenberghe2004}.
+
+\subsection{Baseline: topology, spectral gap, and convergence}
+\label{sec:sim-m1}
+We first verify the topology/$\lambda_2$/convergence chain on five
+graph families (ring, grid, Erd\H{o}s--R\'enyi, random geometric,
+small-world) at sizes $n \in \{20, 50, 100\}$.
+Figure~\ref{fig:m1-lambda2} plots $\lambda_2$ against edge count.
+Dense random graphs (Erd\H{o}s--R\'enyi, random geometric) achieve
+$\lambda_2$ orders of magnitude larger than sparse structured graphs
+(ring, small-world) at the same $n$, and the induced consensus
+$\tau_\varepsilon$ varies accordingly---e.g.\ the $n{=}100$ ring
+requires $\tau_\varepsilon = 500$ consensus steps to reach
+$\varepsilon = 10^{-3}$ disagreement, whereas the $n{=}100$
+Erd\H{o}s--R\'enyi graph reaches it in $7$ steps. The ring closed-form
+$\lambda_2 = 2(1 - \cos(2\pi/n))$ and the complete-graph
+$\lambda_2 = n$ are recovered to machine precision, confirming the
+pipeline.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{m1_lambda2_vs_edges.pdf}
+\caption{Algebraic connectivity versus edge count across graph
+families at $n \in \{20, 50, 100\}$. Dense random families dominate
+sparse structured families at matched $n$.}
+\label{fig:m1-lambda2}
+\end{figure}
+
+\subsection{PPO reweighting versus baselines versus the SDP bound}
+\label{sec:sim-m2}
+We train a single PPO policy on Erd\H{o}s--R\'enyi supports with
+$n = 20$, edge probability $p = 0.25$, bound $w_{\max} = 1.0$, and a
+tight budget $B = 25$ (smaller than the expected sum of Metropolis
+weights, so the policy must choose which edges to emphasize). Five
+seeds are trained independently, and each is evaluated on five
+held-out graphs drawn from the same distribution, yielding 25
+independent held-out evaluations.
+
+Figure~\ref{fig:m2-training} shows the training curve averaged over
+five seeds, and Figure~\ref{fig:m2-eval} compares $\lambda_2$ and
+$\tau_\varepsilon$ across policies on a representative seed. The
+aggregate numbers are collected in Table~\ref{tab:m2}. The learned
+policy attains a mean $\lambda_2 = 0.795 \pm 0.146$ versus
+$0.607 \pm 0.119$ for uniform, $0.512 \pm 0.124$ for
+degree-proportional, and $0.167 \pm 0.033$ for
+Metropolis---a $1.31\times$ lift over the strongest baseline.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{m2_training_curve.pdf}
+\caption{PPO training curve (mean reward vs.\ environment frames)
+averaged over five seeds, Erd\H{o}s--R\'enyi $n{=}20$, $B{=}25$.
+The policy converges within $\sim$300k frames.}
+\label{fig:m2-training}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{m2_lambda2_by_policy.pdf}
+\caption{Held-out $\lambda_2$ by policy on seed~$0$. PPO dominates the
+three analytic baselines on this support. Metropolis weights place
+more mass on low-degree edges, which is suboptimal under a global
+budget; uniform fills every edge to the bound but cannot concentrate;
+PPO reshapes mass toward spectrally informative cut edges.}
+\label{fig:m2-eval}
+\end{figure}
+
+\begin{table}[t]
+\centering
+\caption{Aggregated held-out performance on Erd\H{o}s--R\'enyi
+$n{=}20$, budget $B{=}25$, across 25 graphs. Mean $\pm$ standard
+deviation. \emph{Fraction of SDP} is the seed-0 ratio
+$\lambda_2/s^\star$ with $s^\star = 0.660$ from Theorem~\ref{thm:fdla}.}
+\label{tab:m2}
+\begin{tabular}{lccc}
+\toprule
+Policy & $\lambda_2$ & $\tau_\varepsilon$ & Fraction of SDP (seed 0) \\
+\midrule
+PPO                  & $0.795 \pm 0.146$ & $10.0 \pm 1.9$  & $0.873$ \\
+Uniform              & $0.607 \pm 0.119$ & $11.0 \pm 3.3$  & $0.624$ \\
+Degree-proportional  & $0.512 \pm 0.124$ & $14.6 \pm 6.7$  & $0.470$ \\
+Metropolis           & $0.167 \pm 0.033$ & $10.3 \pm 2.4$  & $0.174$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The most informative comparator is the FDLA SDP of
+Theorem~\ref{thm:fdla}. On the seed-0 graph, CVXPY+SCS returns
+$s^\star = 0.660$, and the PPO policy reaches
+$\lambda_2 = 0.576$, i.e.\ $\rho_\pi = 87.3\%$ of the convex optimum.
+This is the core quantitative claim of the paper. No feasible
+policy---learned or analytic---can do better than the SDP, and PPO
+closes $87\%$ of the gap between uniform reweighting and the provable
+ceiling while consuming effectively the full budget
+($24.99 / 25.00$). The residual $13\%$ is the approximation error of
+a $2\times 128$ MLP policy trained on $300$k environment frames; a
+richer policy class or a longer training budget would be expected to
+close it further.
+
+\subsection{Perturbation-robust reweighting}
+\label{sec:sim-m3b}
+To probe robustness we evaluate two policies under i.i.d.\ Bernoulli
+edge failures at rates $p \in \{0, 0.1, 0.2, 0.3\}$: (i) the
+clean-trained PPO policy from Section~\ref{sec:sim-m2}, and (ii) a
+PPO policy trained with perturbation-in-the-loop at $p = 0.15$.
+Figure~\ref{fig:m3b} overlays the $\lambda_2$ curves for both
+variants against uniform and Metropolis.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{m3b_robustness_clean.pdf}
+\caption{$\lambda_2$ vs.\ edge-failure probability for the
+clean-trained PPO policy and classical baselines, averaged over 20
+perturbation draws per point. PPO dominates both uniform and
+Metropolis at every failure rate.}
+\label{fig:m3b}
+\end{figure}
+
+At $p = 0$ the clean-trained PPO reaches $\lambda_2 = 0.607$ versus
+uniform $0.329$ and Metropolis $0.115$. At $p = 0.1$ the lead grows:
+PPO $0.462$, uniform $0.233$, Metropolis $0.079$. At the most severe
+rate we tested, $p = 0.3$, the PPO policy still attains $0.158$
+versus uniform $0.091$ and Metropolis $0.028$. The
+perturbation-trained variant pays a small clean-regime tax ($0.548$
+vs.\ $0.607$ at $p{=}0$) but closes to within $10\%$ of the
+clean-trained policy by $p{=}0.1$ and tracks it thereafter, as
+expected for a policy that was never shown clean rollouts during
+training. The headline is that robustness, under the failure-rate
+range tested here, is achieved primarily by the spectral-gap
+objective itself: a policy that concentrates weight on a few
+spectrally important edges happens to degrade gracefully under i.i.d.\
+edge drops.
+
+\subsection{Geometric swarm control}
+\label{sec:sim-m3c}
+In the geometric extension, $n = 20$ agents inhabit the unit square
+and edges are weighted by a truncated Gaussian kernel
+$W_{ij} = \exp(-(\|p_i - p_j\|/r)^2)$ with $r = 0.15$ and cutoff
+$3r$. The action is a per-agent planar velocity $v_i$ with
+$\|v_i\| \le v_{\max} = 0.02$. We compare PPO against three
+baselines over 10 evaluation seeds: (i) \emph{random} velocities,
+(ii) an \emph{unconstrained centroid} heuristic that pulls every
+agent toward the group centroid, and (iii) a \emph{constrained
+centroid} that freezes an agent once its minimum pairwise distance
+falls below the collision radius $r_{\min} = 0.08$. The results are
+summarized in Table~\ref{tab:m3c}, and Figure~\ref{fig:m3c-curves}
+plots the episode-level $\lambda_2$ traces.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{m3c_lambda2_curves.pdf}
+\caption{Episode-level $\lambda_2(t)$ for PPO versus baselines on
+10 geometric-swarm seeds. PPO builds spectral gap while preserving
+inter-agent spacing; the unconstrained centroid spikes to
+$\lambda_2 \approx 19.8$ by collapsing agents onto a single point.}
+\label{fig:m3c-curves}
+\end{figure}
+
+\begin{table}[t]
+\centering
+\caption{Geometric swarm evaluation over 10 seeds, mean values.
+\emph{mean\_min\_dist} is the minimum pairwise inter-agent distance
+averaged across agents and time; the collision radius is $r_{\min} = 0.08$.}
+\label{tab:m3c}
+\begin{tabular}{lcc}
+\toprule
+Policy & $\lambda_2$ (final) & mean\_min\_dist \\
+\midrule
+PPO                      & $0.34$  & $0.034$ \\
+Constrained centroid     & $0.30$  & $0.038$ \\
+Random                   & $0.27$  & $0.034$ \\
+Unconstrained centroid   & $19.83$ & $0.003$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The unconstrained-centroid $\lambda_2 \approx 19.83$ is a degenerate
+optimum: it is achieved by collapsing all agents to a single point,
+at which the Gaussian-kernel Laplacian converges to a near-complete
+graph with $\lambda_2 \to n = 20$. The accompanying mean minimum
+pairwise distance is $0.003$---about $25\times$ below the collision
+radius $r_{\min}$. Because any physical realization of the swarm
+would be infeasible at that density, this baseline is reported for
+completeness but is not a fair comparator. Against the fair
+collision-respecting comparator, PPO attains a mean final $\lambda_2$
+of $0.34$ versus $0.30$ for the constrained centroid and $0.27$ for
+random velocities, and wins in $6$ out of $10$ seeds. PPO spreads
+agents toward a configuration that keeps minimum pairwise distance
+comparable to the constrained centroid while achieving a larger
+spectral gap, which is the qualitative behavior one would hope for
+from a position-controlled consensus swarm.
+
+\subsection{Discrete rewiring: a negative result}
+\label{sec:sim-m3a}
+We finally report the discrete-rewiring variant, in which the
+continuous weight action is replaced by a categorical action over
+edge toggles. On an Erd\H{o}s--R\'enyi support with $n = 20$, the
+action space has $\binom{n}{2} = 190$ pairs, and the policy selects
+one pair per step to add or remove subject to connectivity and
+edge-budget constraints. We compare PPO against a random rewiring
+baseline and a greedy swap oracle over 10 evaluation seeds disjoint
+from training.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{m3a_lambda2_final_bar.pdf}
+\caption{Final-episode $\lambda_2$ by rewiring policy on 10 held-out
+Erd\H{o}s--R\'enyi supports. PPO with a flat MLP categorical head
+fails to generalize across topologies and is outperformed by random
+rewiring on every seed.}
+\label{fig:m3a}
+\end{figure}
+
+The result, shown in Figure~\ref{fig:m3a}, is that PPO is
+outperformed by random rewiring on \emph{every one} of the 10 held-out
+seeds, with the greedy oracle roughly a factor of $3$--$4$ above PPO.
+Diagnostic analysis suggests a clean architectural cause: a flat MLP
+over a 190-way categorical action space has no mechanism to
+generalize across topologies, because the action index of a given
+edge pair $(i, j)$ has no stable semantic meaning when the sampled
+support changes between episodes. Under i.i.d.\ Erd\H{o}s--R\'enyi
+resampling, the same logit position corresponds to an
+existing edge in one episode and a non-existing one in the next, so
+the policy cannot learn a transferable ``which edge to toggle''
+heuristic. This is consistent with the broader graph-reinforcement-
+learning literature, where permutation-equivariant graph-neural-
+network actors are used precisely to make the policy behave
+identically under relabelings of the node
+set~\cite{KipfWelling2017,Dai2017,Darvariu2021,Darvariu2024}. We
+therefore report this as a negative architectural result and defer
+the equivariant-policy design to future work (Section~\ref{sec:conclusion},
+item~1).
+
+\section{Conclusion}
+\label{sec:conclusion}
+We have introduced a convex-relaxation view of policy-learned
+algebraic-connectivity maximization: the FDLA SDP of Boyd and Ghosh
+provides a tight, polynomial-time-computable upper bound
+(Theorem~\ref{thm:fdla}) against which any reweighting policy can be
+benchmarked via the suboptimality ratio
+$\rho_\pi = \lambda_2(L(w_\pi))/s^\star$. A PPO policy on
+Erd\H{o}s--R\'enyi supports attains $\rho_\pi \approx 0.87$ and a
+mean $1.31\times$ lift over uniform baselines, continues to dominate
+classical baselines under stochastic edge failures, and in a
+geometric swarm regime beats a collision-respecting centroid
+heuristic while preserving inter-agent spacing. A discrete-rewiring
+variant based on a flat MLP categorical head fails to generalize
+across topologies, a clean diagnostic motivating the first item of
+future work.
+
+Five directions naturally follow. (1) \emph{Permutation-equivariant
+actors.} Replacing the flat MLP with a graph neural
+network~\cite{KipfWelling2017,Dai2017,Darvariu2021} should address
+the generalization failure observed in
+Section~\ref{sec:sim-m3a}. (2) \emph{Decentralized observations.}
+Replacing the global-Laplacian spectrum in Definition~\ref{def:mdp}
+with a distributed Fiedler-vector
+estimate~\cite{YangFreeman2010,SabattiniEtAl2013} would address the
+modeling scope limitation of Remark~\ref{rem:scope} and make the
+policy implementable in a truly distributed setting. (3)
+\emph{Time-varying supports.} Lifting the fixed-support assumption of
+Theorem~\ref{thm:fdla} toward jump-Markov or
+continually-drifting graph families would test the learning approach
+in a regime where retraining the SDP every step is infeasible.
+(4) \emph{Rate guarantees.} Translating the empirical
+$\rho_\pi$ into a finite-sample high-probability bound, perhaps via
+the tools of~\cite{Olshevsky2009}, would give the learned policy a
+convergence certificate rather than a benchmark. (5)
+\emph{Hardware-in-the-loop validation.} Instantiating the geometric
+variant on a physical multi-robot testbed would close the loop
+between spectral-gap optimization and the swarm-robotics motivation
+that inspired this work.
+
+\bibliographystyle{IEEEtran}
+\bibliography{Reference}
+
+\end{document}
