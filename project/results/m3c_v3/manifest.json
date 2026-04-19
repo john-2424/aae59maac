@@ -1,5 +1,5 @@
 {
-  "git_hash": "d92e25d2aa8c68cf919653c963b973f855fb5384",
+  "git_hash": "d6185a4709ac63090ed34beacefec41874a5913d",
   "config": {
     "ckpt": "runs/m3c_v3/best.pt"
   }
