@@ -1,0 +1,6 @@
+{
+  "git_hash": "d92e25d2aa8c68cf919653c963b973f855fb5384",
+  "config": {
+    "ckpt": "runs/m3c_v3/best.pt"
+  }
+}
