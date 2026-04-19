@@ -53,6 +53,22 @@ def _centroid_action(env: GeometricSwarmEnv) -> np.ndarray:
     return (direction / norms).reshape(-1).astype(np.float32)
 
 
+def _constrained_centroid_action(env: GeometricSwarmEnv) -> np.ndarray:
+    """Move toward centroid only while the swarm still respects r_min.
+
+    Once any pair is within r_min, freeze. Lets the centroid heuristic compete
+    fairly with PPO under the same collision constraint — without this, it
+    cheats by collapsing every agent onto a single point (lambda_2 -> n).
+    """
+    pos = env.positions
+    diff = pos[:, None, :] - pos[None, :, :]
+    d = np.linalg.norm(diff, axis=-1)
+    iu = np.triu_indices(env.n, k=1)
+    if d[iu].size and d[iu].min() < env.cfg.r_min:
+        return np.zeros(2 * env.n, dtype=np.float32)
+    return _centroid_action(env)
+
+
 def _ppo_action(actor, obs: np.ndarray) -> np.ndarray:
     td = TensorDict(
         {"observation": torch.tensor(np.asarray(obs), dtype=torch.float32).unsqueeze(0)},
@@ -99,8 +115,8 @@ def main() -> None:
     actor.load_state_dict(ckpt["actor"])
     actor.eval()
 
-    all_traces: dict[str, list[list[float]]] = {"ppo": [], "centroid": [], "random": []}
-    all_min: dict[str, list[list[float]]] = {"ppo": [], "centroid": [], "random": []}
+    all_traces: dict[str, list[list[float]]] = {"ppo": [], "centroid": [], "centroid_constrained": [], "random": []}
+    all_min: dict[str, list[list[float]]] = {"ppo": [], "centroid": [], "centroid_constrained": [], "random": []}
     rows: list[dict] = []
     sample_pos_ppo = None
     sample_pos_init = None
@@ -139,6 +155,21 @@ def main() -> None:
         rows.append({"seed": seed, "policy": "centroid", "lambda2_final": lam2_t[-1],
                      "mean_min_dist": float(np.mean(min_t))})
 
+        # Constrained centroid (freezes once min_dist < r_min)
+        env = _make_env(config, int(seed))
+        obs, _ = env.reset(seed=int(seed))
+        lam2_t, min_t = [], []
+        done = trunc = False
+        while not (done or trunc):
+            a = _constrained_centroid_action(env)
+            obs, _, done, trunc, info = env.step(a)
+            lam2_t.append(float(info["lambda2"]))
+            min_t.append(float(info["min_dist"]))
+        all_traces["centroid_constrained"].append(lam2_t)
+        all_min["centroid_constrained"].append(min_t)
+        rows.append({"seed": seed, "policy": "centroid_constrained", "lambda2_final": lam2_t[-1],
+                     "mean_min_dist": float(np.mean(min_t))})
+
         # Random
         env = _make_env(config, int(seed))
         obs, _ = env.reset(seed=int(seed))
@@ -155,8 +186,9 @@ def main() -> None:
         rows.append({"seed": seed, "policy": "random", "lambda2_final": lam2_t[-1],
                      "mean_min_dist": float(np.mean(min_t))})
         print(
-            f"seed={seed} ppo={rows[-3]['lambda2_final']:.3f} "
-            f"centroid={rows[-2]['lambda2_final']:.3f} random={rows[-1]['lambda2_final']:.3f}"
+            f"seed={seed} ppo={rows[-4]['lambda2_final']:.3f} "
+            f"centroid={rows[-3]['lambda2_final']:.3f} "
+            f"centroid_c={rows[-2]['lambda2_final']:.3f} random={rows[-1]['lambda2_final']:.3f}"
         )
 
     csv_path = args.out / "eval.csv"
