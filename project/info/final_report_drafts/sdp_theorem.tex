@@ -1,0 +1,115 @@
+% ---------------------------------------------------------------------------
+% SDP-as-theorem subsection for the final report's Main Results (§III or §IV).
+%
+% This converts what was presented in the midterm as an informal "baseline"
+% into a stated theoretical anchor with a citation + a short proof sketch.
+% Per Mou's Tips and Example_FinalReprot2.pdf, a proposition-with-proof is the
+% canonical shape of a strong Main Results section.
+%
+% Required bib entries (see additional_refs.bib):
+%   Boyd2006, GhoshBoyd2006, XiaoBoyd2004, BoydVandenberghe2004, HornJohnson2013
+% ---------------------------------------------------------------------------
+
+\subsection{Convex upper bound on achievable algebraic connectivity}
+
+Let $G = (V, E)$ be a fixed undirected connected graph on $n$ nodes. Write
+$E = \{e_1, \ldots, e_m\}$ with endpoints $e_k = (i_k, j_k)$, and let
+$a_k = \mathbf{e}_{i_k} - \mathbf{e}_{j_k} \in \R^n$ where
+$\mathbf{e}_i$ is the $i$-th standard basis vector. For a nonnegative
+weight vector $w \in \R^m_{\ge 0}$, the weighted graph Laplacian is
+\begin{equation}
+L(w) \;=\; \sum_{k=1}^{m} w_k\, a_k a_k^\top
+\;=\; A\,\mathrm{diag}(w)\,A^\top,
+\label{eq:Lw}
+\end{equation}
+with $A = [a_1, \ldots, a_m] \in \R^{n \times m}$ the signed
+incidence matrix. By construction $L(w)$ is symmetric positive
+semidefinite and $L(w)\mathbf{1} = 0$, so the smallest eigenvalue of
+$L(w)$ is $0$ with eigenvector $\mathbf{1}$, and the algebraic
+connectivity is the second smallest eigenvalue
+\cite{Fiedler1973,OlfatiSaber2007}. By the Courant--Fischer
+characterization \cite{HornJohnson2013},
+\begin{equation}
+\lambda_2(L(w)) \;=\; \min_{\substack{v \in \R^n \\ v \perp \mathbf{1},\; \|v\|=1}} v^\top L(w)\, v.
+\label{eq:rayleigh}
+\end{equation}
+
+We define the admissible weight set
+\begin{equation}
+\mathcal{W} = \Big\{ w \in \R^m \;:\; 0 \le w_k \le w_{\max},\;
+\textstyle\sum_{k=1}^m w_k \le B \Big\},
+\label{eq:Wset}
+\end{equation}
+which is the polyhedral convex set used throughout this work. The
+reweighting problem solved by our RL policy (in continuous form) is
+\begin{equation}
+\lambda_2^\star \;:=\; \max_{w \in \mathcal{W}} \; \lambda_2(L(w)).
+\label{eq:primal}
+\end{equation}
+
+\begin{theorem}[Boyd \cite{Boyd2006}; Ghosh and Boyd \cite{GhoshBoyd2006}]
+\label{thm:fdla}
+Problem \eqref{eq:primal} is equivalent to the semidefinite program
+\begin{equation}
+\begin{aligned}
+s^\star \;=\; \max_{w,\,s} \quad & s \\
+\text{s.t.} \quad & L(w) \;\succeq\; s\!\left(I_n - \tfrac{1}{n}\mathbf{1}\mathbf{1}^\top\right), \\
+& w \in \mathcal{W},
+\end{aligned}
+\label{eq:sdp}
+\end{equation}
+in the sense that $\lambda_2^\star = s^\star$, and any optimizer
+$w^\star$ of \eqref{eq:sdp} is a maximizer of \eqref{eq:primal}.
+\end{theorem}
+
+\begin{proof}
+Let $\Pi := I_n - \tfrac{1}{n}\mathbf{1}\mathbf{1}^\top$ be the
+orthogonal projector onto $\mathbf{1}^\perp$. Since $L(w) \succeq 0$
+and $L(w)\mathbf{1} = 0$, the nontrivial eigenvalues of $L(w)$ are
+exactly the eigenvalues of $\Pi L(w) \Pi$ restricted to
+$\mathbf{1}^\perp$. Equation \eqref{eq:rayleigh} therefore gives
+\[
+\lambda_2(L(w)) \;=\; \sup\{\, s \in \R : v^\top L(w) v \ge s\, v^\top \Pi v
+\;\; \forall\, v \in \R^n \,\}.
+\]
+The universal inequality inside the supremum is a linear matrix
+inequality $L(w) - s\Pi \succeq 0$, so
+\[
+\lambda_2(L(w)) \;=\; \sup\{\, s : L(w) - s\,\Pi \succeq 0 \,\}.
+\]
+Taking the supremum jointly over $w \in \mathcal{W}$ and $s$
+yields \eqref{eq:sdp}. Because $L(w)$ is linear in $w$
+(cf.~\eqref{eq:Lw}) and $\mathcal{W}$ is convex, the program
+\eqref{eq:sdp} is a convex SDP and is solvable to global optimality by
+interior-point methods
+\cite{BoydVandenberghe2004,XiaoBoyd2004}.
+\end{proof}
+
+Theorem~\ref{thm:fdla} plays two roles in this paper. First, it gives a
+\emph{tight}, polynomial-time-computable upper bound on any reweighting
+policy, learned or otherwise: no feasible $w \in \mathcal{W}$ attains
+$\lambda_2(L(w)) > s^\star$. Second, it defines the
+\emph{suboptimality ratio}
+\begin{equation}
+\rho_\pi \;:=\; \frac{\lambda_2\!\big(L(w_\pi)\big)}{s^\star}
+\;\in\; [0, 1]
+\label{eq:subopt}
+\end{equation}
+for any policy $\pi$ producing a feasible $w_\pi$. We evaluate our
+PPO policy against \eqref{eq:subopt} in Section~V and report
+$\rho_\pi \approx 0.87$ on Erd\H{o}s--R\'enyi supports of size
+$n = 20$, turning the comparison against classical heuristic baselines
+(uniform, Metropolis--Hastings \cite{XiaoBoyd2004,Boyd2004}) into a
+quantitative optimality claim rather than a relative one.
+
+\begin{remark}
+Theorem~\ref{thm:fdla} assumes a fixed edge support $E$. When the
+support is itself a decision variable, as in the discrete rewiring
+setting of Section~VI, the feasible set $\{L(w) : w \in \mathcal{W}\}$
+is no longer convex and \eqref{eq:sdp} ceases to provide a valid upper
+bound; maximizing $\lambda_2$ over topologies is NP-hard in general
+\cite{Mosk2006}. Similarly, when $E$ is induced by agent positions as
+in the geometric swarm setting of Section~VII, the map from positions
+to $L(w)$ is nonlinear and nonconvex, and the SDP does not apply. This
+is precisely the regime in which a learned policy earns its keep.
+\end{remark}

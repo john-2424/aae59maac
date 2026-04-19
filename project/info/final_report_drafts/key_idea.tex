@@ -1,0 +1,29 @@
+% ---------------------------------------------------------------------------
+% Key Idea paragraph for the final report.
+% Drop this as a one-paragraph subsection between Problem Formulation (§II)
+% and Main Results (§III), either as "\subsection{Key Idea}" or as an unnumbered
+% paragraph opening §III. Patterned after Example_FinalReprot2.pdf, whose single
+% well-framed key-idea paragraph carried a report with no simulations.
+%
+% References expected: \cite{Fiedler1973,Boyd2006,GhoshBoyd2006,Schulman2017}.
+% ---------------------------------------------------------------------------
+
+\subsection*{Key Idea}
+We frame algebraic-connectivity maximization under bounded edge weights
+and a communication budget as a constrained Markov decision process whose
+optimum is upper-bounded by a convex semidefinite program, namely the
+Fastest Distributed Linear Averaging (FDLA) relaxation of Boyd and
+co-authors \cite{XiaoBoyd2004,Boyd2006,GhoshBoyd2006}. This bound
+reframes an otherwise heuristic benchmarking exercise as a quantitative
+suboptimality claim: for any feasible reweighting policy $\pi$ acting on
+a fixed support, $\lambda_2(L(w_\pi)) \le s^\star$, where $s^\star$ is
+the SDP optimum. We then show that a Proximal Policy Optimization
+\cite{Schulman2017} agent observing only graph features and consensus
+statistics learns a policy that attains
+$\lambda_2(L(w_\pi))/s^\star \approx 0.87$, averaged over five
+Erd\H{o}s--R\'enyi seeds with $n = 20$ and a tight budget $B = 25$.
+Because the FDLA SDP ceases to apply when the underlying edge set is
+itself a decision variable (discrete rewiring) or when the graph support
+is induced by agent positions (random geometric graphs), we further
+evaluate the same policy class in those two settings and report its
+generalization to regimes where no convex upper bound is available.
