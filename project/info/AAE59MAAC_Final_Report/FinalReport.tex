@@ -67,13 +67,17 @@ communication budget, is equivalent to a convex semidefinite program
 upper bound to score a learned policy against. A proximal policy
 optimization (PPO) agent trained on Erd\H{o}s--R\'enyi supports of
 size $n=20$ reaches $87.3\%$ of the SDP bound on a representative
-held-out graph and a mean $\lambda_2 = 0.795 \pm 0.146$ across
-twenty-five held-out graphs, which is a $1.31\times$ lift over the
+held-out graph and a mean $\lambda_2 = 0.795 \pm 0.146$ across five
+independently trained seeds (each evaluated on its training support
+under five held-out consensus initial conditions, for twenty-five
+evaluation rows in total), which is a $1.31\times$ lift over the
 uniform baseline. The same policy class, when trained with stochastic
 edge failures during rollouts, still beats the classical baselines at
 every failure rate we tested. In a geometric swarm setting, where the
-SDP bound no longer applies, it also outperforms a collision-aware
-centroid heuristic while keeping the agents reasonably spread out. A
+SDP bound no longer applies, it achieves a higher mean
+$\lambda_2$ than a collision-aware centroid heuristic while keeping
+inter-agent spacing at a comparable level, though the per-seed win
+rate against the geometric heuristic is not strictly above chance. A
 discrete-rewiring variant of the same setup fails to generalize
 across topologies under a flat action space, and we report this
 honestly as a limitation that motivates a graph-neural-network actor
@@ -211,11 +215,14 @@ reweightings on top of a warm-started weight vector.
 \label{def:mdp}
 At step $k$, the observation $s_k \in \mathcal{S}$ is built by
 stacking together: (i) degree statistics (mean, standard deviation,
-max, min) of $L(w_k)$, (ii) the top-$\kappa$ Laplacian eigenvalues
-with $\kappa = 4$, (iii) the current weight vector $w_k$ padded out
-to $m_{\max}$, (iv) the normalized remaining budget, and (v) an
-exponential moving average of $\log J_{\text{dis}}$. The action
-$a_k \in [-1,1]^m$ is mapped to weights through
+max, min) of $L(w_k)$, (ii) the smallest $\kappa$ Laplacian
+eigenvalues with $\kappa = 4$ (which include $\lambda_1 = 0$ and
+$\lambda_2$, i.e.\ the informative end of the spectrum for
+connectivity), (iii) the current weight vector $w_k$ padded out to
+$m_{\max}$, (iv) the fraction of the budget already used,
+$\sum_k w_k / B$, and (v) the fraction of the episode already
+elapsed, $k/T$. The action $a_k \in [-1,1]^m$ is mapped to weights
+through
 $w_{k+1} = \Pi_\mathcal{W}\!\big(\tfrac{w_{\max}}{2}(a_k + 1)\big)$,
 where $\Pi_\mathcal{W}$ rescales by $B / \sum w$ when the budget
 constraint is broken. The stage reward is
@@ -225,7 +232,10 @@ r_k = \lambda_2(L(w_{k+1})) - \beta\,\mathrm{Cost}(w_{k+1}) - \gamma\,\mathrm{Vi
 \end{equation}
 with $\mathrm{Cost}(w) = \sum_k w_k$ penalizing budget use and
 $\mathrm{Violations}(w)$ a hinge loss on bound violations before
-projection.
+projection. In the experiments reported in
+Section~\ref{sec:sim} we set $\beta = \gamma = 0$, so the reward is
+just $\lambda_2(L(w_{k+1}))$ and the bound and budget constraints
+are enforced entirely by the projection $\Pi_\mathcal{W}$.
 \end{definition}
 
 \begin{remark}[Modeling scope]
@@ -468,11 +478,11 @@ the resulting consensus settling time $\tau_\varepsilon$ tracks
 this. As an example, the $n = 100$ ring needs
 $\tau_\varepsilon = 500$ consensus steps to reach $\varepsilon =
 10^{-3}$ disagreement, while the $n = 100$ Erd\H{o}s--R\'enyi graph
-reaches the same threshold in $7$ steps. We also recover the
-closed-form ring eigenvalue $\lambda_2 = 2(1 - \cos(2\pi/n))$ and
-the complete-graph eigenvalue $\lambda_2 = n$ to machine precision,
-which gives us reasonable confidence the pipeline is working as
-intended.
+reaches the same threshold in $7$ steps. As a sanity check on the
+Laplacian pipeline, the ring closed-form $\lambda_2 = 2(1 -
+\cos(2\pi/n))$ is recovered to machine precision at every size we
+tested, which gives us reasonable confidence the rest of the
+measurements are not contaminated by a bug in the eigen-solver path.
 
 \begin{figure}[t]
 \centering
@@ -487,11 +497,17 @@ sparse structured families at matched $n$.}
 \label{sec:sim-m2}
 We train a single PPO policy on Erd\H{o}s--R\'enyi supports with
 $n = 20$, edge probability $p = 0.25$, weight bound $w_{\max} = 1.0$,
-and a tight budget $B = 25$. The budget is set below the expected
-sum of Metropolis weights, so the policy actually has to choose
-which edges to put weight on. Five seeds are trained independently,
-and each one is evaluated on five held-out graphs from the same
-distribution, giving 25 independent held-out evaluations in total.
+and a tight budget $B = 25$. For these supports the number of edges
+is typically $m \approx 42$, so a uniform policy that wants to fill
+every edge to $w_{\max}$ would need $B \approx 42$ and instead has
+to underfill each edge to meet $B = 25$. The Metropolis baseline
+actually sums to far less than $B$ (roughly $6.9$ in our runs), so
+it does not saturate the budget at all. A good policy has to
+concentrate the available budget on the spectrally useful cut edges
+rather than spread it uniformly. We train five seeds independently,
+and evaluate each trained policy on its training support under five
+held-out consensus initial conditions, which gives 25 evaluation
+rows covering five distinct graphs.
 
 Figure~\ref{fig:m2-training} shows the training curve averaged
 across the five seeds, and Figure~\ref{fig:m2-eval} compares
@@ -527,8 +543,10 @@ edges.}
 \begin{table}[t]
 \centering
 \caption{Aggregated held-out performance on Erd\H{o}s--R\'enyi
-$n{=}20$, budget $B{=}25$, across 25 graphs. Mean $\pm$ standard
-deviation. \emph{Fraction of SDP} is the seed-0 ratio
+$n{=}20$, budget $B{=}25$, across five trained seeds each evaluated
+on its training support under five held-out consensus initial
+conditions (25 evaluation rows, five distinct graphs). Mean $\pm$
+standard deviation. \emph{Fraction of SDP} is the seed-0 ratio
 $\lambda_2/s^\star$ with $s^\star = 0.660$ from Theorem~\ref{thm:fdla}.}
 \label{tab:m2}
 \begin{tabular}{lccc}
@@ -558,12 +576,16 @@ close more of it.
 
 \subsection{Perturbation-robust reweighting}
 \label{sec:sim-m3b}
-To probe robustness, we evaluate two policies under i.i.d.\
+To probe robustness we evaluate two PPO policies under i.i.d.\
 Bernoulli edge failures at rates $p \in \{0, 0.1, 0.2, 0.3\}$:
-(i) the clean-trained PPO policy from Section~\ref{sec:sim-m2}, and
-(ii) a PPO policy trained with perturbation-in-the-loop at $p =
-0.15$. Figure~\ref{fig:m3b} overlays the $\lambda_2$ curves for
-both variants alongside uniform and Metropolis.
+(i) a clean-trained PPO policy and (ii) a second PPO policy trained
+with perturbation-in-the-loop at $p = 0.15$. Both are trained under
+the same MDP as in Section~\ref{sec:sim-m2}, except that the budget
+is relaxed to the no-scaling default $B = m \cdot w_{\max}$ rather
+than the tight $B = 25$ of the headline experiment, so the absolute
+$\lambda_2$ values in this section are not directly comparable to
+Table~\ref{tab:m2}. Figure~\ref{fig:m3b} overlays the $\lambda_2$
+curves for both PPO variants alongside uniform and Metropolis.
 
 \begin{figure}[t]
 \centering
@@ -594,7 +616,7 @@ degrade gracefully when edges drop out i.i.d.
 \label{sec:sim-m3c}
 In the geometric extension, we put $n = 20$ agents in the unit
 square. Edges are weighted by a truncated Gaussian kernel
-$W_{ij} = \exp(-(\|p_i - p_j\|/r)^2)$ with $r = 0.15$ and cutoff
+$W_{ij} = \exp(-(\|p_i - p_j\|/r)^2)$ with $r = 0.25$ and cutoff
 $3r$. The action is a per-agent planar velocity $v_i$ with
 $\|v_i\| \le v_{\max} = 0.02$. We compare PPO against three
 baselines over 10 evaluation seeds: (i) \emph{random} velocities,
@@ -628,7 +650,7 @@ Policy & $\lambda_2$ (final) & mean\_min\_dist \\
 PPO                      & $0.34$  & $0.034$ \\
 Constrained centroid     & $0.30$  & $0.038$ \\
 Random                   & $0.27$  & $0.034$ \\
-Unconstrained centroid   & $19.83$ & $0.003$ \\
+Unconstrained centroid   & $19.83$ & $0.004$ \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -637,18 +659,23 @@ The $\lambda_2 \approx 19.83$ achieved by the unconstrained
 centroid is a degenerate optimum. It happens because every agent
 collapses to a single point, at which the Gaussian-kernel Laplacian
 becomes a near-complete graph with $\lambda_2 \to n = 20$. The
-associated mean minimum pairwise distance is $0.003$, which is
-about $25\times$ smaller than the collision radius $r_{\min}$. Any
+associated mean minimum pairwise distance is $0.004$, which is
+about $22\times$ smaller than the collision radius $r_{\min}$. Any
 physical realization of the swarm would obviously be infeasible at
 that density, so we report this baseline for completeness but it is
 not a fair comparator. Against the fair collision-respecting
-comparator, PPO ends up with mean final $\lambda_2 = 0.34$ versus
+comparators, PPO ends up with mean final $\lambda_2 = 0.34$ versus
 $0.30$ for the constrained centroid and $0.27$ for random
-velocities, and it wins on $6$ out of the $10$ seeds. PPO spreads
+velocities. Per-seed the picture is more mixed: PPO beats random
+velocities on $6$ of the $10$ seeds, but loses head-to-head against
+the constrained centroid on $6$ of the $10$ seeds (the mean still
+favors PPO because its wins are by larger margins). PPO spreads
 agents into a configuration where the minimum pairwise distance
 stays comparable to the constrained centroid while the spectral gap
-is larger, which is the qualitative behavior we wanted from a
-position-controlled consensus swarm.
+is on average larger, which is the qualitative behavior we wanted
+from a position-controlled consensus swarm, even if the per-seed
+variance is high enough that the win rate against a well-tuned
+geometric heuristic is not a strict improvement.
 
 \subsection{Discrete rewiring: a negative result}
 \label{sec:sim-m3a}
@@ -702,8 +729,10 @@ $\rho_\pi = \lambda_2(L(w_\pi))/s^\star$. A PPO policy on
 Erd\H{o}s--R\'enyi supports reached $\rho_\pi \approx 0.87$ together
 with a $1.31\times$ mean lift over uniform baselines, kept beating
 classical baselines under stochastic edge failures, and in a
-geometric swarm regime beat a collision-respecting centroid
-heuristic while preserving inter-agent spacing. The
+geometric swarm regime achieved a higher mean $\lambda_2$ than a
+collision-respecting centroid heuristic while preserving
+inter-agent spacing, albeit with a per-seed win rate that is not a
+strict improvement over the geometric heuristic. The
 discrete-rewiring variant with a flat MLP categorical head failed to
 generalize across topologies, which is a clean diagnostic that
 motivates the first of the future directions listed below.
